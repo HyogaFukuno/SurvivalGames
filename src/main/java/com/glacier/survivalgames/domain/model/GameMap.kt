@@ -1,5 +1,8 @@
 package com.glacier.survivalgames.domain.model
 
+import org.bukkit.Bukkit
+import org.bukkit.Location
+import org.bukkit.WorldCreator
 import org.bukkit.configuration.serialization.ConfigurationSerializable
 import org.bukkit.configuration.serialization.SerializableAs
 import java.util.HashMap
@@ -45,3 +48,13 @@ data class GameMap(val name: String,
         )
     }
 }
+
+val GameMap.spawnLocation: Location
+    get() {
+        val world = Bukkit.getWorld(worldName)
+        if (world != null) {
+            return world.spawnLocation
+        }
+
+        return WorldCreator(worldName).createWorld().spawnLocation
+    }

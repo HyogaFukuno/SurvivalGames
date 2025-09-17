@@ -5,6 +5,7 @@ import com.glacier.survivalgames.domain.model.Participant
 import com.glacier.survivalgames.domain.repository.ParticipantRepository
 import com.glacier.survivalgames.domain.service.GameParticipantService
 import io.fairyproject.container.InjectableComponent
+import org.bukkit.Location
 import org.bukkit.entity.Player
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -15,11 +16,11 @@ class GameParticipantServiceImpl(private val repository: ParticipantRepository) 
 
     private val players = ConcurrentHashMap<UUID, GameParticipant>()
     private val spectators = ConcurrentHashMap<UUID, GameParticipant>()
-    private val freezers = ConcurrentHashMap<UUID, GameParticipant>()
+    private val freezers = ConcurrentHashMap<UUID, Location>()
 
     override fun players(): Map<UUID, GameParticipant> = players
     override fun spectators(): Map<UUID, GameParticipant> = spectators
-    override fun freezers(): Map<UUID, GameParticipant> = freezers
+    override fun freezers(): MutableMap<UUID, Location> = freezers
 
     override fun addPlayer(player: Player): GameParticipant {
         repository.findByUniqueId(player.uniqueId)?.let {

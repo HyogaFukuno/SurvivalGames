@@ -1,6 +1,7 @@
 package com.glacier.survivalgames.domain.model
 
 import org.bukkit.entity.Player
+import java.util.UUID
 
 class GameParticipant(val player: Player,
                       val participant: Participant,
@@ -29,3 +30,6 @@ class GameParticipant(val player: Player,
             rank = 0)
     }
 }
+
+val GameParticipant.uniqueId: UUID
+    get() = participant.uniqueId

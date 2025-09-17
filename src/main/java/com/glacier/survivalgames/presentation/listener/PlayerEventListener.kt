@@ -2,7 +2,8 @@ package com.glacier.survivalgames.presentation.listener
 
 import com.glacier.survivalgames.domain.model.StateMachine
 import com.glacier.survivalgames.domain.model.GameState
-import com.glacier.survivalgames.domain.model.state.Deathmatch
+import com.glacier.survivalgames.domain.model.state.DeathmatchType
+import com.glacier.survivalgames.domain.model.state.GameContext
 import com.glacier.survivalgames.domain.service.GameMapService
 import com.glacier.survivalgames.domain.service.GameParticipantService
 import com.glacier.survivalgames.utils.Chat
@@ -24,20 +25,19 @@ import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.event.block.BlockBreakEvent
-import org.bukkit.event.block.BlockBurnEvent
 import org.bukkit.event.block.BlockPlaceEvent
-import org.bukkit.event.block.BlockSpreadEvent
 import org.bukkit.event.entity.FoodLevelChangeEvent
 import org.bukkit.event.inventory.InventoryOpenEvent
 import org.bukkit.event.player.AsyncPlayerChatEvent
 import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.event.player.PlayerJoinEvent
+import org.bukkit.event.player.PlayerMoveEvent
 import org.bukkit.event.player.PlayerPickupItemEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.event.vehicle.VehicleEnterEvent
+import org.bukkit.inventory.ItemStack
 import java.text.NumberFormat
 import java.util.Locale
-import java.util.concurrent.TimeUnit
 import kotlin.math.max
 
 @InjectableComponent
@@ -64,11 +64,8 @@ class PlayerEventListener(val stateMachine: StateMachine<GameState>,
         e.player.foodLevel = 20
         e.player.level = 0
         e.player.exp = 0.0f
-        e.player.inventory.clear()
-        e.player.inventory.helmet = null
-        e.player.inventory.chestplate = null
-        e.player.inventory.leggings = null
-        e.player.inventory.boots = null
+        e.player.inventory.contents = null
+        e.player.inventory.armorContents = null
 
         e.player.activePotionEffects.forEach { e.player.removePotionEffect(it.type) }
 
@@ -84,9 +81,9 @@ class PlayerEventListener(val stateMachine: StateMachine<GameState>,
                 e.player.allowFlight = true
 
                 Bukkit.getOnlinePlayers().forEach { it.hidePlayer(e.player) }
-//                Bukkit.getWorld(gameMapService.playingGameMap().worldName)?.let {
-//                    PaperLib.teleportAsync(e.player, it.spawnLocation)
-//                }
+                gameMapService.getPlayingWorld()?.let {
+                    PaperLib.teleportAsync(e.player, it.spawnLocation)
+                }
 
                 val it = participantService.addSpectator(e.player)
                 val points = NumberFormat.getIntegerInstance(Locale.US).format(it.points)
@@ -102,6 +99,21 @@ class PlayerEventListener(val stateMachine: StateMachine<GameState>,
             participantService.save(it)
             val points = NumberFormat.getIntegerInstance(Locale.US).format(it.points)
             e.quitMessage = Chat.message("&8[&e$points&8]${e.player.displayName} &6has left&8.", prefix = false)
+        }
+    }
+
+    @EventHandler
+    fun onMove(e: PlayerMoveEvent) {
+        if (!participantService.freezers().containsKey(e.player.uniqueId)) {
+            return
+        }
+        participantService.freezers()[e.player.uniqueId]?.let {
+            val current = e.player.location
+            if (current.blockX != it.blockX || current.blockZ != it.blockZ) {
+                it.pitch = current.pitch
+                it.yaw = current.yaw
+                PaperLib.teleportAsync(e.player, it)
+            }
         }
     }
 
@@ -284,8 +296,17 @@ class PlayerEventListener(val stateMachine: StateMachine<GameState>,
 
                 if (e.player.health - e.finalDamage <= 0.1) {
                     onDeathByPlayer(e.player, e.damager)
+
                     if (participantService.players().size <= 1) {
                         stateMachine.sendEvent(GameState.EndGame)
+                    }
+                    else if (GameContext.state == GameState.Deathmatch
+                        && GameContext.deathmatchType == DeathmatchType.Tournament) {
+                        Bukkit.broadcastMessage("${e.damager.displayName} &ahas won the tournament!")
+                        Bukkit.broadcastMessage("&cPlease wait a few moment. will starting the another tournament.")
+                        e.damager.inventory.addItem(ItemStack(Material.GOLDEN_APPLE))
+                        e.damager.sendMessage(Chat.message("&aYou've gained &6Golden Apple &afor tournament win reward!"))
+                        stateMachine.sendEvent(GameState.PreDeathmatch)
                     }
                 }
             }

@@ -4,6 +4,8 @@ import com.glacier.survivalgames.domain.model.GameMap
 import com.glacier.survivalgames.domain.service.GameMapService
 import io.fairyproject.bootstrap.bukkit.BukkitPlugin
 import io.fairyproject.container.InjectableComponent
+import org.bukkit.Bukkit
+import org.bukkit.World
 import org.bukkit.configuration.file.YamlConfiguration
 import org.bukkit.configuration.serialization.ConfigurationSerialization
 import java.io.File
@@ -25,7 +27,9 @@ class GameMapServiceImpl : GameMapService {
 
     override fun votableMaps(): List<GameMap> = votableMaps
     override fun currentVotes(): MutableMap<GameMap, Int> = votes
-    override fun playingGameMap(): GameMap = chooseMap
+    override fun getPlayingMap(): GameMap = chooseMap
+    override fun getPlayingWorld(): World? = Bukkit.getWorld(chooseMap.worldName)
+
     override fun add(map: GameMap) {
 
         maps.add(map)

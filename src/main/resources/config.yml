@@ -10,4 +10,4 @@ remain-time:
 settings:
   lobby-spawn: null
   maintenance-mode: false
-  requirement-player-count: 2
+  require-min-players: 2

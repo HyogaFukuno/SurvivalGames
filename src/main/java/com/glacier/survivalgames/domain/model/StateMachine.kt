@@ -16,8 +16,8 @@ class StateMachine<TKey> {
     }
 
     var currentState: State<TKey>? = null
+    var nextKey: TKey? = null
     private val states = mutableMapOf<TKey, State<TKey>>()
-    private var nextKey: TKey? = null
     private var nowTransition = false
     private var transitionPhase = TransitionPhase.NONE
 
@@ -45,8 +45,9 @@ class StateMachine<TKey> {
 
     private fun transition(): TaskResponse<Boolean> = when (transitionPhase) {
         TransitionPhase.EXIT -> {
+
             val result = currentState?.exit() ?: TaskResponse.success(true)
-            if (result?.result == true) {
+            if (currentState?.forgetExit == true || result?.result == true) {
                 currentState = states[nextKey]
                 transitionPhase = TransitionPhase.ENTER
                 nextKey = null
@@ -55,8 +56,8 @@ class StateMachine<TKey> {
             TaskResponse.continueTask()
         }
         TransitionPhase.ENTER -> {
-            val result = currentState?.enter()
-            if (result?.result == true) {
+            val result = currentState?.enter() ?: TaskResponse.success(true)
+            if (currentState?.forgetEnter == true || result?.result == true) {
                 nowTransition = false
                 transitionPhase = TransitionPhase.NONE
                 currentState?.update()
@@ -69,9 +70,11 @@ class StateMachine<TKey> {
 
     abstract class State<TKey>(protected val stateMachine: StateMachine<TKey>, val key: TKey) {
         var remainTime = 0
+        internal var forgetEnter = false
+        internal var forgetExit = false
 
-        private val enterAsync: CompletableFuture<Void> by lazy { enterAsync() }
-        private val exitAsync: CompletableFuture<Void> by lazy { exitAsync() }
+        private val enterAsync: CompletableFuture<*> by lazy { enterAsync() }
+        private val exitAsync: CompletableFuture<*> by lazy { exitAsync() }
 
         internal fun enter(): TaskResponse<Boolean> {
             val future = enterAsync
@@ -89,9 +92,9 @@ class StateMachine<TKey> {
             }
         }
 
-        protected abstract fun enterAsync(): CompletableFuture<Void>
+        protected abstract fun enterAsync(): CompletableFuture<*>
         internal abstract fun update(): TaskResponse<Boolean>
-        internal abstract fun exitAsync(): CompletableFuture<Void>
+        internal abstract fun exitAsync(): CompletableFuture<*>
         protected abstract fun broadcast()
         protected abstract fun shouldBroadcast(): Boolean
     }

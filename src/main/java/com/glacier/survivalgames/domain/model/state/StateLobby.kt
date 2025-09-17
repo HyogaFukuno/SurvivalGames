@@ -13,20 +13,18 @@ import io.papermc.lib.PaperLib
 import org.bukkit.Bukkit
 import org.bukkit.WorldCreator
 import java.util.concurrent.CompletableFuture
-import kotlin.compareTo
-import kotlin.div
-import kotlin.rem
 
-class StateLobby(stateMachine: StateMachine<GameState>,
-                 val participantService: GameParticipantService,
-                 val mapService: GameMapService) : StateMachine.State<GameState>(stateMachine, GameState.Lobby) {
+class StateLobby(stateMachine: StateMachine<GameState>, val participantService: GameParticipantService, val mapService: GameMapService) : StateMachine.State<GameState>(stateMachine, GameState.Lobby) {
+
+    val requireMinPlayers by lazy { BukkitPlugin.INSTANCE.config.getInt("settings.require-min-players") }
 
     init {
         remainTime = BukkitPlugin.INSTANCE.config.getInt("remain-time.lobby")
     }
 
-    override fun enterAsync(): CompletableFuture<Void> {
+    override fun enterAsync(): CompletableFuture<*> {
         Log.info("Entering $key state")
+        GameContext.state = key
         return CompletableFuture.completedFuture(null)
     }
     override fun update(): TaskResponse<Boolean> {
@@ -45,22 +43,25 @@ class StateLobby(stateMachine: StateMachine<GameState>,
         return TaskResponse.continueTask()
     }
 
-    override fun exitAsync(): CompletableFuture<Void> {
+    override fun exitAsync(): CompletableFuture<*> {
         Log.info("Exiting $key state")
 
-        val map = mapService.playingGameMap()
+        val map = mapService.getPlayingMap()
         WorldCreator(map.worldName).createWorld().apply {
             isAutoSave = false
             time = 1000L
 
-            val players = participantService.players().values.map { it.player }.toList()
+            val players = participantService.players().values.toList()
             val spawns = map.spawns.shuffled()
 
             val futures = spawns
                 .mapNotNull { LocationUtils.getLocationFromString(it) }
                 .zip(players)
-                .mapIndexed { i, (location, player) ->
-                    PaperLib.teleportAsync(player, location)
+                .mapIndexed { i, (location, participant) ->
+                    participant.position = i + 1
+                    PaperLib.teleportAsync(participant.player, location).thenAccept {
+                        participantService.freezers().putIfAbsent(participant.player.uniqueId, location)
+                    }
                 }
 
             return CompletableFuture.allOf(*futures.toTypedArray())
