@@ -1,0 +1,19 @@
+remain-time:
+  lobby: 30
+  pre-game: 30
+  pre-deathmatch: 10
+  deathmatch: 180
+  end-game: 10
+  cleanup: 5
+
+database:
+  host: localhost
+  port: 3306
+  database: db
+  username: root
+  password: null
+
+settings:
+  lobby-spawn: null
+  maintenance-mode: false
+  required-players: 2
