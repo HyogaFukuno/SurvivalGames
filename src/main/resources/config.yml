@@ -1,5 +1,5 @@
 remain-time:
-  lobby: 30
+  lobby: 60
   pre-game: 30
   pre-deathmatch: 10
   deathmatch: 180

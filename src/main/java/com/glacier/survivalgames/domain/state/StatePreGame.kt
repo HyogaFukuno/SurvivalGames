@@ -1,234 +1,247 @@
 package com.glacier.survivalgames.domain.state
 
-import com.glacier.survivalgames.domain.extension.gameParticipant
-import com.glacier.survivalgames.domain.extension.setSpectator
-import com.glacier.survivalgames.domain.service.GameParticipantService
-import com.glacier.survivalgames.domain.model.GameContext
-import com.glacier.survivalgames.domain.model.GameState
-import com.glacier.survivalgames.domain.model.StateMachine
-import com.glacier.survivalgames.domain.model.event.CommandSeppukuEvent
-import com.glacier.survivalgames.domain.model.event.OpenDeathmatchMenuEvent
-import com.glacier.survivalgames.domain.service.ChestService
-import com.glacier.survivalgames.domain.service.GameMapService
-import com.glacier.survivalgames.domain.service.TournamentService
+import com.glacier.survivalgames.AudienceProvider
+import com.glacier.survivalgames.application.service.ChestService
+import com.glacier.survivalgames.application.service.GameMapService
+import com.glacier.survivalgames.application.service.ParticipantService
+import com.glacier.survivalgames.domain.StateMachine
+import com.glacier.survivalgames.domain.entity.GameContext
+import com.glacier.survivalgames.domain.entity.GameState
+import com.glacier.survivalgames.domain.model.GameMap
+import com.glacier.survivalgames.extension.gameParticipant
+import com.glacier.survivalgames.extension.spectator
 import com.glacier.survivalgames.utils.Chat
 import com.glacier.survivalgames.utils.ChunkUtils
 import com.glacier.survivalgames.utils.LocationUtils
-import com.glacier.survivalgames.utils.RxBus
 import io.fairyproject.bootstrap.bukkit.BukkitPlugin
-import io.fairyproject.container.InjectableComponent
 import io.fairyproject.log.Log
 import io.fairyproject.mc.scheduler.MCSchedulers
 import io.fairyproject.scheduler.response.TaskResponse
 import io.papermc.lib.PaperLib
-import io.reactivex.rxjava3.kotlin.addTo
 import org.bukkit.Bukkit
 import org.bukkit.Chunk
-import org.bukkit.Location
 import org.bukkit.Material
-import org.bukkit.World
-import org.bukkit.event.block.Action
-import org.bukkit.event.player.AsyncPlayerChatEvent
-import org.bukkit.event.player.PlayerInteractEvent
-import org.bukkit.event.player.PlayerJoinEvent
+import org.bukkit.entity.Player
 import org.bukkit.event.player.PlayerMoveEvent
-import org.bukkit.event.player.PlayerQuitEvent
 import org.imanity.imanityspigot.chunk.AsyncPriority
-import java.text.NumberFormat
 import java.util.LinkedList
-import java.util.Locale
 import java.util.Queue
-import java.util.concurrent.Callable
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.Executors
 
-@InjectableComponent
 class StatePreGame(stateMachine: StateMachine<GameState>,
                    context: GameContext,
-                   participantService: GameParticipantService,
+                   audienceProvider: AudienceProvider,
+                   participantService: ParticipantService,
                    mapService: GameMapService,
-                   val chestService: ChestService,
-                   val tournamentService: TournamentService
-) : StateBase(stateMachine, GameState.PreGame, context, participantService, mapService) {
+                   val chestService: ChestService
+) : StateBase(stateMachine, GameState.PreGame, context, audienceProvider, participantService, mapService) {
+
+    private val defaultTime by lazy { BukkitPlugin.INSTANCE.config.getInt("remain-time.pre-game", 10) }
+    private val maps: Queue<GameMap> by lazy { LinkedList(mapService.maps.filter { it.worldName != mapService.decideMap.worldName }) }
+    private val scanExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors())
 
     init {
-        remainTime = BukkitPlugin.INSTANCE.config.getInt("remain-time.pre-game", 10)
+        remainTime = defaultTime
     }
 
     override fun enterAsync(): CompletableFuture<Any> {
-        super.enterAsync()
-        RxBus.listen<PlayerMoveEvent>().subscribe(this::onMove).addTo(disposable)
-        RxBus.listen<CommandSeppukuEvent>().subscribe { m -> m.player.health = 0.0 }.addTo(disposable)
+        MCSchedulers.getAsyncScheduler().schedule {
+            val futures = ConcurrentLinkedQueue<CompletableFuture<Chunk>>()
+            val world = Bukkit.getWorld(mapService.decideMap.worldName)
+            world.imanity().getChunkAtAsynchronously(world.spawnLocation, AsyncPriority.HIGH)
+                .thenCompose { center ->
+                    val radius = mapService.decideMap.radius / ChunkUtils.SIZE
+                    Log.info("Chunk search radius: $radius")
 
-        MCSchedulers.getGlobalScheduler().schedule({
-            context.players.forEach { RxBus.publish(OpenDeathmatchMenuEvent(it)) }
-        }, 10L)
-
-        Bukkit.broadcastMessage(Chat.message("&eMap name&8: &2${mapService.playingMap.name}"))
-        Bukkit.broadcastMessage(Chat.message("&eMap author&8: &2${mapService.playingMap.author}"))
-        Bukkit.broadcastMessage(Chat.message("&eMap link&8: &2${mapService.playingMap.url}"))
-
-        Bukkit.broadcastMessage(Chat.message("&cPlease wait &8[&e$remainTime&8]&c seconds before the games begin!"))
-
-        return CompletableFuture.supplyAsync {
-            val batchSize = 4
-            val futures = findChunksAsync(Bukkit.getWorld(mapService.playingMap.worldName))
-            CompletableFuture.allOf(*futures.toTypedArray()).thenAccept {
-                val chunks: Queue<Chunk> = LinkedList(futures.map { it.get() })
-                MCSchedulers.getGlobalScheduler().scheduleAtFixedRate(Callable {
-                    if (chunks.isEmpty()) {
-                        return@Callable TaskResponse.success(true)
+                    val taskTopLeft = MCSchedulers.getAsyncScheduler().schedule {
+                        for (x in center.x - radius until center.x) {
+                            for (z in center.z - radius until center.z) {
+                                futures.add(world.imanity().getChunkAtAsynchronously(x, z, AsyncPriority.NORMAL))
+                            }
+                        }
                     }
 
-                    repeat(batchSize) {
-                        val chunk = chunks.poll() ?: return@Callable TaskResponse.success(true)
-                        searchChestAtChunk(chunk)
+                    val taskTopRight = MCSchedulers.getAsyncScheduler().schedule {
+                        for (x in center.x until center.x + radius) {
+                            for (z in center.z - radius until center.z) {
+                                futures.add(world.imanity().getChunkAtAsynchronously(x, z, AsyncPriority.NORMAL))
+                            }
+                        }
                     }
-                    return@Callable TaskResponse.continueTask()
-                }, 10L, 1L)
-            }
+
+                    val taskBottomLeft = MCSchedulers.getAsyncScheduler().schedule {
+                        for (x in center.x - radius until center.x) {
+                            for (z in center.z until center.z + radius) {
+                                futures.add(world.imanity().getChunkAtAsynchronously(x, z, AsyncPriority.NORMAL))
+                            }
+                        }
+                    }
+
+                    val taskBottomRight = MCSchedulers.getAsyncScheduler().schedule {
+                        for (x in center.x until center.x + radius) {
+                            for (z in center.z until center.z + radius) {
+                                futures.add(world.imanity().getChunkAtAsynchronously(x, z, AsyncPriority.NORMAL))
+                            }
+                        }
+                    }
+
+                    CompletableFuture.allOf(
+                        taskTopLeft.future,
+                        taskTopRight.future,
+                        taskBottomLeft.future,
+                        taskBottomRight.future)
+                }.thenCompose {
+                    val chunks = futures.toList()
+                    val ft = chunks.map { scanChunkAsync(it.get()).whenComplete { _, ex ->
+                        ex?.let { ex -> Log.error(ex) }
+                    } }
+                    CompletableFuture.allOf(*ft.toTypedArray())
+                }.thenAccept {
+                    val length = chestService.tier1Chests.size
+                    var index = 0
+
+                    val world = Bukkit.getWorld(mapService.decideMap.worldName)
+                    MCSchedulers.getGlobalScheduler().scheduleAtFixedRate({
+                        if (index >= length) {
+                            TaskResponse.success(true)
+                        }
+                        else {
+                            val (x, y, z) = chestService.tier1Chests.keys.elementAt(index)
+                            chestService.fillTier1Chest(chestService.getChest(x, y , z, world))
+                            index++
+                            TaskResponse.continueTask()
+                        }
+                    }, 0L, 2L)
+                    Log.info("Tier1 chests: ${chestService.tier1Chests.size}")
+                    Log.info("Tier2 chests: ${chestService.tier2Chests.size}")
+                }.whenComplete { _, ex ->
+                    ex?.printStackTrace()
+                    ex.cause?.printStackTrace()
+                }
+        }
+
+        return super.enterAsync().thenApply {
+            audienceProvider.all().sendMessage { Chat.component("&eMap name&8: &2${mapService.decideMap.name}") }
+            audienceProvider.all().sendMessage { Chat.component("&eMap author&8: &2${mapService.decideMap.author}") }
+            audienceProvider.all().sendMessage { Chat.component("&eMap link&8: &2${mapService.decideMap.url}") }
+
+            Bukkit.unloadWorld("lobby", false)
         }
     }
 
     override fun update(): TaskResponse<Boolean> {
-        if (remainTime == 10) {
-            Bukkit.getOnlinePlayers().forEach { it.player.closeInventory() }
-        }
-
         broadcast()
-        when (remainTime) {
-            1 -> {
-                remainTime = 0
-                stateMachine.sendEvent(GameState.LiveGame)
-            }
-            else -> {
-                remainTime--
-            }
-        }
-        return TaskResponse.continueTask()
-    }
+        if (remainTime <= 1) {
+            remainTime = 0
 
-    override fun exitAsync(): CompletableFuture<Any> {
-        context.deathmatchStyle = tournamentService.decideStyle()
-        return super.exitAsync()
+            val next = if (context.players.size > 1) GameState.LiveGame else GameState.EndGame
+            stateMachine.sendEvent(next)
+            return TaskResponse.continueTask()
+        }
+
+        remainTime--
+
+        return TaskResponse.continueTask()
     }
 
     override fun broadcast() {
         if (shouldBroadcast()) {
-            val time = if (remainTime > 60) remainTime / 60 else remainTime
-            val message = if (remainTime > 60) "minutes" else if (remainTime > 1) "seconds" else "second"
-            Bukkit.broadcastMessage(Chat.message("&8[&e$time&8] &c$message until the games begin!"))
+            val time = if (remainTime > ONE_MINUTES) remainTime / ONE_MINUTES else remainTime
+            val symbols = if (remainTime > ONE_MINUTES) "minutes" else if (remainTime > 1) "seconds" else "second"
+            val message = "&8[&e$time&8] &c$symbols until the games begin!"
+
+            audienceProvider.all().sendMessage { Chat.component(message) }
         }
     }
 
     override fun shouldBroadcast(): Boolean = when {
-        remainTime % 60 == 0 -> true
+        remainTime % ONE_MINUTES == 0 -> true
         remainTime == 30 -> true
         remainTime == 10 -> true
         remainTime <= 5 -> true
         else -> false
     }
 
-    override fun onPlayerJoin(e: PlayerJoinEvent) {
-        super.onPlayerJoin(e)
-
-        val world = Bukkit.getWorld(mapService.playingMap.worldName)
-        PaperLib.teleportAsync(e.player, world.spawnLocation).thenAccept {
-            e.player.setSpectator()
-            context.spectators.add(e.player)
-        }
-    }
-
-    override fun onPlayerQuit(e: PlayerQuitEvent) {
-        super.onPlayerQuit(e)
-
-        context.players.removeIf { it.uniqueId == e.player.uniqueId }
-        context.spectators.removeIf { it.uniqueId == e.player.uniqueId }
-    }
-
-    override fun onChat(e: AsyncPlayerChatEvent) {
-        val participant = e.player.gameParticipant
-        val points = NumberFormat.getIntegerInstance(Locale.US).format(participant.points)
-
-        if (context.spectators.contains(e.player)) {
-            context.players.forEach { e.recipients.remove(it) }
-            e.format = Chat.message("&8[&e$points&8]&4SPEC&8|${e.player.displayName}&8: &r${e.message}", prefix = false)
-        } else {
-            e.format = Chat.message("&8[&a${participant.bounties}&8]&c${participant.position}&8|${e.player.displayName}&8: &r${e.message}", prefix = false)
-        }
-    }
-
-    override fun onInteract(e: PlayerInteractEvent) {
-        if (context.spectators.contains(e.player)) {
-            e.isCancelled = true
-
-            if (e.action == Action.RIGHT_CLICK_AIR
-                || e.action == Action.RIGHT_CLICK_BLOCK
-                || e.action == Action.LEFT_CLICK_BLOCK) {
-                val random = context.players.random()
-                PaperLib.teleportAsync(e.player, random.location).thenAccept {
-                    e.player.sendMessage(Chat.message("Teleporting ${random.displayName}&r."))
-                }
+    override fun onJoin(player: Player) {
+        val world = Bukkit.getWorld(mapService.decideMap.worldName)
+        MCSchedulers.getGlobalScheduler().schedule {
+            PaperLib.teleportAsync(player, world.spawnLocation).thenAccept {
+                player.spectator()
+                context.spectators.add(player.uniqueId)
             }
         }
     }
 
-    private fun onMove(e: PlayerMoveEvent) {
-        val index = e.player.gameParticipant.position - 1
-        LocationUtils.getLocationFromString(mapService.playingMap.spawns[index])?.let {
-            val current = e.player.location
-            if (current.blockX != it.blockX || current.blockZ != it.blockZ) {
-                it.pitch = current.pitch
-                it.yaw = current.yaw
+    override fun onMove(e: PlayerMoveEvent) {
+        val position = e.player.gameParticipant?.position
+        if (position == null || position == -1) {
+            return
+        }
+
+        val spawn = mapService.decideMap.spawns[position]
+        LocationUtils.getLocationFromString(spawn)?.let {
+            if (e.player.location.blockX != it.blockX
+                || e.player.location.blockZ != it.blockZ) {
+
+                it.pitch = e.player.location.pitch
+                it.yaw = e.player.location.yaw
                 PaperLib.teleportAsync(e.player, it)
             }
         }
     }
 
-    private fun findChunksAsync(world: World): List<CompletableFuture<Chunk>> {
-        val futures = mutableListOf<CompletableFuture<Chunk>>()
-        world.imanity().getChunkAtAsynchronously(world.spawnLocation, AsyncPriority.HIGHER).thenAccept { center ->
-            for (x in center.x - ChunkUtils.SIZE .. center.x + ChunkUtils.SIZE) {
-                for (z in center.z - ChunkUtils.SIZE .. center.z + ChunkUtils.SIZE) {
-                    futures.add(world.imanity().getChunkAtAsynchronously(x, z, AsyncPriority.HIGHER))
-                }
+    private fun unloadWorld(map: GameMap): CompletableFuture<*> {
+        return MCSchedulers.getGlobalScheduler().schedule({
+
+            Log.info("Unloading world ${map.worldName}...")
+            Bukkit.unloadWorld(map.worldName, false)
+
+            if (maps.isNotEmpty()) {
+                unloadWorld(maps.poll())
             }
-        }
-        return futures
+            else {
+                Log.info("All worlds unloaded.")
+                CompletableFuture.completedFuture(null)
+            }
+        }, 20L).future
     }
 
-    private fun searchChestAtChunk(chunk: Chunk) {
-        val chunkX = chunk.x
-        val chunkZ = chunk.z
+    @Suppress("DEPRECATION")
+    private fun scanChunkAsync(chunk: Chunk?): CompletableFuture<*> {
+        if (chunk == null) {
+            return CompletableFuture.completedFuture(null)
+        }
 
-        var findTier1 = 0
-        var findTier2 = 0
+        val snapshot = chunk.getChunkSnapshot(true, false, false)
+        val chunkX = snapshot.x
+        val chunkZ = snapshot.z
+
+        val positions = mutableSetOf<Triple<Int, Int, Int>>()
         for (x in 0 until ChunkUtils.SIZE) {
             for (z in 0 until ChunkUtils.SIZE) {
-                for (y in 0 until 220) {
-                    val snapshot = PaperLib.getBlockState(chunk.getBlock(x, y, z), false)
-                    if (!shouldChestType(snapshot.state.type)) continue
-
-                    val locX = (chunkX * ChunkUtils.SIZE + x).toDouble()
-                    val locZ = (chunkZ * ChunkUtils.SIZE + z).toDouble()
-                    val locY = y.toDouble()
-                    val location = Location(chunk.world, locX, locY, locZ)
-                    when (snapshot.state.type) {
-                        Material.CHEST -> {
-                            chestService.tier1Chests().add(location)
-                            chestService.fillTier1Chest(chestService.getChest(location))
-                            findTier1++
-                        }
-                        Material.ENDER_CHEST -> {
-                            chestService.tier2Chests().add(location)
-                            findTier2++
-                        }
-                        else -> {}
-                    }
+                val maxY = chunk.getHighestBlockYAt(x, z)
+                for (y in 0 .. maxY) {
+                    positions.add(Triple(x, y, z))
                 }
             }
         }
-        Log.info("Found $findTier1 tier 1 chests and $findTier2 tier 2 chests in chunk $chunkX, $chunkZ")
-    }
 
-    private fun shouldChestType(mat: Material): Boolean = mat == Material.CHEST || mat == Material.ENDER_CHEST
+        return CompletableFuture.runAsync({
+            positions.parallelStream().forEach { (x, y, z) ->
+                val id = snapshot.getBlockTypeId(x, y, z)
+                val material = Material.getMaterial(id)
+                when (material) {
+                    Material.CHEST -> {
+                        chestService.tier1Chests[Triple(chunkX * ChunkUtils.SIZE + x, y, chunkZ * ChunkUtils.SIZE + z)] = true
+                    }
+                    Material.ENDER_CHEST -> {
+                        chestService.tier2Chests[Triple(chunkX * ChunkUtils.SIZE + x, y, chunkZ * ChunkUtils.SIZE + z)] = true
+                    }
+                    else -> {}
+                }
+            }
+        }, scanExecutor)
+    }
 }

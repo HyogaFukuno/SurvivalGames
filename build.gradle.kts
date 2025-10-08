@@ -15,7 +15,7 @@ plugins {
     //Shadow plugin, provides the ability to shade fairy and other dependencies to compiled jar
     id("com.github.johnrengelman.shadow") version "8.1.1"
 
-    kotlin("jvm") version "2.1.0"
+    kotlin("jvm") version "2.2.0"
 }
 
 val libPlugin = properties("lib.plugin").toBoolean()
@@ -98,7 +98,6 @@ dependencies {
     implementation("io.reactivex.rxjava3:rxkotlin:3.0.1")
     implementation("com.zaxxer:HikariCP:4.0.3")
     implementation("io.papermc:paperlib:1.0.7")
-
     implementation("me.devnatan:inventory-framework-platform-bukkit:3.3.9")
 
     api("io.fairyproject:core-config")

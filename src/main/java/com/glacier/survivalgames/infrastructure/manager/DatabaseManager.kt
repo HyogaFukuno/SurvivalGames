@@ -6,15 +6,11 @@ import io.fairyproject.bootstrap.bukkit.BukkitPlugin
 import io.fairyproject.container.InjectableComponent
 import io.fairyproject.container.PreInitialize
 import java.sql.ResultSet
-import kotlin.io.use
 
 @InjectableComponent
 class DatabaseManager {
-
-    private val usingDatabase by lazy { BukkitPlugin.INSTANCE.config.getBoolean("database.use", false) }
-
-    private val source: HikariDataSource by lazy {
-
+    val use by lazy { BukkitPlugin.INSTANCE.config.getBoolean("database.use", false) }
+    private val source by lazy {
         val host = BukkitPlugin.INSTANCE.config.getString("database.host", "localhost")
         val port = BukkitPlugin.INSTANCE.config.getInt("database.port", 3306)
         val database = BukkitPlugin.INSTANCE.config.getString("database.database", "survivalgames")
@@ -37,61 +33,24 @@ class DatabaseManager {
 
     @PreInitialize
     fun onPreInitialize() {
-        if (!usingDatabase) {
-            return
-        }
+        if (!use) return
 
         if (!existsParticipantTable("participants")) {
             createParticipantsTable()
         }
     }
 
-    /**
-     * Participantテーブルが存在するかを返す処理
-     */
-    fun existsParticipantTable(name: String): Boolean {
-        val results = executeQuery(
-            sql = """
-                SELECT COUNT(*) as count
-                FROM information_schema.tables
-                WHERE table_schema = ? AND table_name = ?
-            """.trimIndent(),
-            params = listOf("survivalgames", name)
-        ) { it.getInt("count") }
-
-        return results.firstOrNull()?.let { it > 0 } ?: false
-    }
-
-    /**
-     * Participant テーブルの作成メソッド
-     */
-    fun createParticipantsTable() {
-        val sql = """
-            CREATE TABLE IF NOT EXISTS participants (
-                unique_id VARCHAR(36) PRIMARY KEY,
-                points INT NOT NULL DEFAULT 100,
-                wins INT NOT NULL DEFAULT 0,
-                played INT NOT NULL DEFAULT 0,
-                kills INT NOT NULL DEFAULT 0,
-                chests INT NOT NULL DEFAULT 0,
-                lifespan INT NOT NULL DEFAULT 0,
-                previous_map VARCHAR(32) NOT NULL DEFAULT '',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                
-                INDEX idx_points (points DESC),
-                INDEX idx_wins (wins DESC)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        """.trimIndent()
-
-        executeUpdate(sql)
+    fun close() {
+        if (source.isClosed) {
+            source.close()
+        }
     }
 
     /**
      * クエリ実行用のメソッド
      */
     fun <T> executeQuery(sql: String, params: List<Any> = emptyList(), mapper: (ResultSet) -> T): List<T> {
-        if (!usingDatabase) {
+        if (!use) {
             return emptyList()
         }
 
@@ -116,7 +75,7 @@ class DatabaseManager {
      * DB更新用メソッド
      */
     fun executeUpdate(sql: String, params: List<Any> = emptyList()): Int {
-        if (!usingDatabase) {
+        if (!use) {
             return 0
         }
 
@@ -130,9 +89,44 @@ class DatabaseManager {
         }
     }
 
-    fun close() {
-        if (source.isClosed) {
-            source.close()
-        }
+    /**
+     * Participantテーブルが存在するかを返す処理
+     */
+    private fun existsParticipantTable(name: String): Boolean {
+        val results = executeQuery(
+            sql = """
+                SELECT COUNT(*) as count
+                FROM information_schema.tables
+                WHERE table_schema = ? AND table_name = ?
+            """.trimIndent(),
+            params = listOf("survivalgames", name)
+        ) { it.getInt("count") }
+
+        return results.firstOrNull()?.let { it > 0 } ?: false
+    }
+
+    /**
+     * Participant テーブルの作成メソッド
+     */
+    private fun createParticipantsTable() {
+        val sql = """
+            CREATE TABLE IF NOT EXISTS participants (
+                unique_id VARCHAR(36) PRIMARY KEY,
+                points INT NOT NULL DEFAULT 100,
+                wins INT NOT NULL DEFAULT 0,
+                played INT NOT NULL DEFAULT 0,
+                kills INT NOT NULL DEFAULT 0,
+                chests INT NOT NULL DEFAULT 0,
+                lifespan INT NOT NULL DEFAULT 0,
+                previous_map VARCHAR(32) NOT NULL DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                
+                INDEX idx_points (points DESC),
+                INDEX idx_wins (wins DESC)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """.trimIndent()
+
+        executeUpdate(sql)
     }
 }

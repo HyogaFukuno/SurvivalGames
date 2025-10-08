@@ -1,5 +1,7 @@
 package com.glacier.survivalgames.presentation.listener
 
+import com.glacier.survivalgames.domain.StateMachine
+import com.glacier.survivalgames.domain.entity.GameState
 import com.glacier.survivalgames.utils.RxBus
 import io.fairyproject.bukkit.events.player.PlayerDamageByPlayerEvent
 import io.fairyproject.bukkit.events.player.PlayerDamageEvent
@@ -13,6 +15,7 @@ import org.bukkit.event.block.BlockPlaceEvent
 import org.bukkit.event.entity.FoodLevelChangeEvent
 import org.bukkit.event.entity.PlayerDeathEvent
 import org.bukkit.event.player.AsyncPlayerChatEvent
+import org.bukkit.event.player.AsyncPlayerPreLoginEvent
 import org.bukkit.event.player.PlayerBucketEmptyEvent
 import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.event.player.PlayerJoinEvent
@@ -20,34 +23,41 @@ import org.bukkit.event.player.PlayerMoveEvent
 import org.bukkit.event.player.PlayerPickupItemEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.event.vehicle.VehicleEnterEvent
+import java.util.concurrent.CompletableFuture
 
 @InjectableComponent
 @RegisterAsListener
-class PlayerEventListener : Listener {
+class PlayerEventListener(val stateMachine: StateMachine<GameState>) : Listener {
+    @EventHandler
+    fun onPreLogin(e: AsyncPlayerPreLoginEvent) {
+        if (!stateMachine.running) {
+            e.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, "Server is currently starting.")
+        }
+    }
+
     @EventHandler
     fun onJoin(e: PlayerJoinEvent) {
-        e.player.playerListName
         e.joinMessage = null
-        RxBus.publish(e)
+        CompletableFuture.runAsync { RxBus.publish(e) }
     }
 
     @EventHandler
     fun onQuit(e: PlayerQuitEvent) {
         e.quitMessage = null
-        RxBus.publish(e)
+        CompletableFuture.runAsync { RxBus.publish(e) }
     }
 
     @EventHandler
-    fun onChat(e: AsyncPlayerChatEvent) = RxBus.publish(e)
-
-    @EventHandler
-    fun onDamageByPlayer(e: PlayerDamageByPlayerEvent) = RxBus.publish(e)
+    fun onChat(e: AsyncPlayerChatEvent) {
+        e.isCancelled = true
+        CompletableFuture.runAsync { RxBus.publish(e) }
+    }
 
     @EventHandler
     fun onDamage(e: PlayerDamageEvent) = RxBus.publish(e)
 
     @EventHandler
-    fun onDeath(e: PlayerDeathEvent) { e.deathMessage = null }
+    fun onDamageByPlayer(e: PlayerDamageByPlayerEvent) = RxBus.publish(e)
 
     @EventHandler
     fun onMove(e: PlayerMoveEvent) = RxBus.publish(e)
@@ -65,6 +75,12 @@ class PlayerEventListener : Listener {
     fun onInteract(e: PlayerInteractEvent) = RxBus.publish(e)
 
     @EventHandler
+    fun onDeath(e: PlayerDeathEvent) { e.deathMessage = null }
+
+    @EventHandler
+    fun onBucketEmpty(e: PlayerBucketEmptyEvent) { e.isCancelled = true }
+
+    @EventHandler
     fun onBlockPlace(e: BlockPlaceEvent) {
         if (e.block.type != Material.FIRE) {
             e.isCancelled = true
@@ -80,7 +96,4 @@ class PlayerEventListener : Listener {
             e.player.playSound(e.player.location, Sound.ITEM_BREAK, 1.0f, 1.0f)
         }
     }
-
-    @EventHandler
-    fun onBucketEmpty(e: PlayerBucketEmptyEvent) { e.isCancelled = true }
 }

@@ -15,7 +15,6 @@ import org.bukkit.event.entity.EntitySpawnEvent
 @InjectableComponent
 @RegisterAsListener
 class WorldEventListener : Listener {
-
     @EventHandler
     fun onEntitySpawn(e: EntitySpawnEvent) {
         if (e.entityType != EntityType.DROPPED_ITEM) {

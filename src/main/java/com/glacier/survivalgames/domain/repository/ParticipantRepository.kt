@@ -7,7 +7,7 @@ interface ParticipantRepository {
     fun findByUniqueId(uniqueId: UUID): Participant?
     fun findAll(): List<Participant>
     fun save(participant: Participant): Participant
-    fun remove(uniqueId: UUID): Boolean
-    fun exists(uniqueId: UUID): Boolean
-    fun getRanking(uniqueId: UUID): Int
+    fun remove(uuid: UUID): Boolean
+    fun exists(uuid: UUID): Boolean
+    fun getRanking(uuid: UUID): Int
 }

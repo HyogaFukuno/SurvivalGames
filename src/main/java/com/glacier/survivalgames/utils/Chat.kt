@@ -1,10 +1,13 @@
 package com.glacier.survivalgames.utils
 
-import org.bukkit.ChatColor
+import net.kyori.adventure.text.Component
 
 object Chat {
-    private val PREFIX = "&8[&6MCSG&8]&r "
+    private const val PREFIX = "&8[&6MCSG&8] &r"
 
     fun message(msg: String, prefix: Boolean = true): String
-            = if (prefix) ColorText.text(PREFIX + msg) else ColorText.text(msg)
+            = TextColor.text(if (prefix) PREFIX + msg else msg)
+
+    fun component(msg: String, prefix: Boolean = true): Component
+        = TextColor.component(if (prefix) PREFIX + msg else msg)
 }

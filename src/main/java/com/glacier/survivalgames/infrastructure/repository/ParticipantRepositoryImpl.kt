@@ -33,7 +33,7 @@ class ParticipantRepositoryImpl(private val databaseManager: DatabaseManager) : 
      * 引数で渡したParticipantを保存する
      */
     override fun save(participant: Participant): Participant {
-        val exist = findByUniqueId(participant.uniqueId)
+        val exist = findByUniqueId(participant.uuid)
         return if (exist == null) {
             // INSERT: Participantを新規作成
             databaseManager.executeUpdate(
@@ -42,7 +42,7 @@ class ParticipantRepositoryImpl(private val databaseManager: DatabaseManager) : 
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """.trimIndent(),
                 params = listOf(
-                    participant.uniqueId.toString(),
+                    participant.uuid.toString(),
                     participant.points,
                     participant.wins,
                     participant.played,
@@ -69,7 +69,7 @@ class ParticipantRepositoryImpl(private val databaseManager: DatabaseManager) : 
                     participant.chests,
                     participant.lifespan,
                     participant.previousMap,
-                    participant.uniqueId.toString()
+                    participant.uuid.toString()
                 )
             )
             participant // 更新されたParticipantを返す
@@ -79,10 +79,10 @@ class ParticipantRepositoryImpl(private val databaseManager: DatabaseManager) : 
     /**
      * 指定したUniqueIdを持つレコードを削除する
      */
-    override fun remove(uniqueId: UUID): Boolean {
+    override fun remove(uuid: UUID): Boolean {
         val affectedRows = databaseManager.executeUpdate(
             sql = "DELETE FROM participants WHERE unique_id = ?",
-            params = listOf(uniqueId.toString())
+            params = listOf(uuid.toString())
         )
 
         // 影響を受けた行数が１以上なら削除成功
@@ -92,10 +92,10 @@ class ParticipantRepositoryImpl(private val databaseManager: DatabaseManager) : 
     /**
      * 指定したUniqueIdを持つParticipantがあるかを返す
      */
-    override fun exists(uniqueId: UUID): Boolean {
+    override fun exists(uuid: UUID): Boolean {
         val results = databaseManager.executeQuery(
             sql = "SELECT COUNT(*) as count FROM participants WHERE unique_id = ?",
-            params = listOf(uniqueId.toString())
+            params = listOf(uuid.toString())
         ) { resultSet ->
             resultSet.getInt("count")
         }
@@ -104,7 +104,7 @@ class ParticipantRepositoryImpl(private val databaseManager: DatabaseManager) : 
         return results.firstOrNull()?.let { it > 0 } ?: false
     }
 
-    override fun getRanking(uniqueId: UUID): Int {
+    override fun getRanking(uuid: UUID): Int {
         val results = databaseManager.executeQuery(
             sql = """
                 SELECT 
@@ -122,14 +122,14 @@ class ParticipantRepositoryImpl(private val databaseManager: DatabaseManager) : 
             resultSet.getInt("rank") to resultSet.getString("unique_id")
         }
 
-        return results.find { it.second == uniqueId.toString() }?.first ?: -1
+        return results.find { it.second == uuid.toString() }?.first ?: -1
     }
 
     /**
      * ResultSetからParticipantを作成する
      */
     private fun getParticipant(result: ResultSet): Participant = Participant(
-        uniqueId = UUID.fromString(result.getString("unique_id")),
+        uuid = UUID.fromString(result.getString("unique_id")),
         points = result.getInt("points"),
         wins = result.getInt("wins"),
         played = result.getInt("played"),

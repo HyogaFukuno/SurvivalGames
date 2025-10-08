@@ -5,24 +5,24 @@ import org.bukkit.Location
 import org.bukkit.WorldCreator
 import org.bukkit.configuration.serialization.ConfigurationSerializable
 import org.bukkit.configuration.serialization.SerializableAs
-import java.util.HashMap
-import kotlin.collections.Map
 
 @SerializableAs("GameMap")
 data class GameMap(val name: String,
                    val worldName: String,
                    val author: String,
+                   val radius: Int,
                    val url: String,
                    val spawns: List<String>,
                    val deathmatchSpawns: List<String>,
                    val deathmatchCenter: String) : ConfigurationSerializable {
 
     override fun serialize(): Map<String?, Any?> {
-        val data: MutableMap<String?, Any?> = HashMap<String?, Any?>()
+        val data: MutableMap<String?, Any?> = HashMap()
 
         data["name"] = name
         data["world_name"] = worldName
         data["author"] = author
+        data["radius"] = radius
         data["url"] = url
         data["spawns"] = spawns
         data["deathmatch_spawns"] = deathmatchSpawns
@@ -41,6 +41,7 @@ data class GameMap(val name: String,
             args["name"] as String,
             args["world_name"] as String,
             args["author"] as String,
+            args["radius"] as Int,
             args["url"] as String,
             args["spawns"] as List<String>,
             args["deathmatch_spawns"] as List<String>,
