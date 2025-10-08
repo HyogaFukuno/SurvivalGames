@@ -6,6 +6,7 @@ import com.glacier.survivalgames.application.service.ParticipantService
 import com.glacier.survivalgames.domain.StateMachine
 import com.glacier.survivalgames.domain.entity.GameContext
 import com.glacier.survivalgames.domain.entity.GameState
+import com.glacier.survivalgames.extension.gameParticipant
 import com.glacier.survivalgames.extension.spectator
 import com.glacier.survivalgames.utils.Chat
 import io.fairyproject.bootstrap.bukkit.BukkitPlugin
@@ -16,6 +17,7 @@ import org.bukkit.Bukkit
 import org.bukkit.entity.Player
 import org.bukkit.event.block.Action
 import org.bukkit.event.entity.FoodLevelChangeEvent
+import org.bukkit.event.player.AsyncPlayerChatEvent
 import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.event.player.PlayerMoveEvent
 import org.bukkit.event.player.PlayerPickupItemEvent
@@ -68,6 +70,15 @@ class StateCleanup(stateMachine: StateMachine<GameState>,
                 player.spectator()
                 context.spectators.add(player.uniqueId)
             }
+        }
+    }
+
+    override fun onChat(e: AsyncPlayerChatEvent) {
+        if (context.spectators.contains(e.player.uniqueId)) {
+            val points = POINT_FORMATTER.get().format(e.player.gameParticipant?.points)
+            audienceProvider.all().sendMessage { Chat.component("&8[&e$points&8]&4SPEC&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
+        } else {
+            audienceProvider.all().sendMessage { Chat.component("&8[&a${e.player.gameParticipant?.bounties}&8]&c${e.player.gameParticipant?.position}&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
         }
     }
 

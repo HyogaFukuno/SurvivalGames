@@ -37,6 +37,8 @@ import org.bukkit.event.player.PlayerPickupItemEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.event.vehicle.VehicleEnterEvent
 import java.text.DecimalFormat
+import java.text.NumberFormat
+import java.util.Locale
 import java.util.concurrent.CompletableFuture
 import kotlin.let
 import kotlin.math.min
@@ -51,6 +53,8 @@ abstract class StateBase(stateMachine: StateMachine<GameState>,
 
     companion object {
         protected const val ONE_MINUTES = 60
+        @JvmStatic
+        protected val POINT_FORMATTER = ThreadLocal.withInitial { NumberFormat.getIntegerInstance(Locale.US) }
         private val CHANCE_FORMAT = DecimalFormat("0.##")
     }
 
@@ -111,7 +115,7 @@ abstract class StateBase(stateMachine: StateMachine<GameState>,
             e.player.reset()
             GameContext.gameParticipants.add(participantService.create(e.player))
 
-            val points = String.format("%,d", e.player.gameParticipant?.points)
+            val points = POINT_FORMATTER.get().format(e.player.gameParticipant?.points)
             audienceProvider.all().sendMessage { Chat.component("&8[&e${points}&8]&r${e.player.displayName} &6has joined&8.", prefix = false) }
             onJoin(e.player)
         }.whenComplete { _, ex -> ex?.printStackTrace() }
@@ -123,7 +127,7 @@ abstract class StateBase(stateMachine: StateMachine<GameState>,
             context.spectators.removeIf { e.player.uniqueId == it }
             context.removeCacheIf { e.player.uniqueId == it }
 
-            val points = String.format("%,d", e.player.gameParticipant?.points)
+            val points = POINT_FORMATTER.get().format(e.player.gameParticipant?.points)
             audienceProvider.all().sendMessage { Chat.component("&8[&e${points}&8]&r${e.player.displayName} &6has left&8.", prefix = false) }
 
             onQuit(e.player)
@@ -131,8 +135,7 @@ abstract class StateBase(stateMachine: StateMachine<GameState>,
     }
 
     protected open fun onChat(e: AsyncPlayerChatEvent) {
-        val points = String.format("%,d", e.player.gameParticipant?.points)
-
+        val points = POINT_FORMATTER.get().format(e.player.gameParticipant?.points)
         audienceProvider.all().sendMessage { Chat.component("&8[&e$points&8]&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
     }
 

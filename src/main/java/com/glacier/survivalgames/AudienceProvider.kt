@@ -19,4 +19,5 @@ class AudienceProvider {
     fun player(player: Player) = audiences.player(player)
     fun all() = audiences.all()
     fun console() = audiences.console()
+    fun players(vararg players: Player) = players.map { player(it) }
 }

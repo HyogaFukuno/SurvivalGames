@@ -6,6 +6,7 @@ import com.glacier.survivalgames.application.service.ParticipantService
 import com.glacier.survivalgames.domain.StateMachine
 import com.glacier.survivalgames.domain.entity.GameContext
 import com.glacier.survivalgames.domain.entity.GameState
+import com.glacier.survivalgames.domain.entity.getMCSpectators
 import com.glacier.survivalgames.extension.gameParticipant
 import com.glacier.survivalgames.extension.spectator
 import com.glacier.survivalgames.utils.Chat
@@ -18,6 +19,7 @@ import org.bukkit.Bukkit
 import org.bukkit.entity.Player
 import org.bukkit.event.block.Action
 import org.bukkit.event.entity.FoodLevelChangeEvent
+import org.bukkit.event.player.AsyncPlayerChatEvent
 import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.event.player.PlayerMoveEvent
 import org.bukkit.event.player.PlayerPickupItemEvent
@@ -75,6 +77,19 @@ class StatePreFFADeathmatch(stateMachine: StateMachine<GameState>,
                 player.spectator()
                 context.spectators.add(player.uniqueId)
             }
+        }
+    }
+
+    override fun onChat(e: AsyncPlayerChatEvent) {
+        // 発言者が観戦者の場合は観戦者とコンソールのみ送信する
+        if (context.spectators.contains(e.player.uniqueId)) {
+            val points = POINT_FORMATTER.get().format(e.player.gameParticipant?.points)
+            context.getMCSpectators().forEach { it.sendMessage { Chat.component("&8[&e$points&8]&4SPEC&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) } }
+            audienceProvider.console().sendMessage { Chat.component("&8[&e$points&8]&4SPEC&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
+        }
+        // 発言者が生存者の場合は全てのユーザー、コンソールに送信する
+        else {
+            audienceProvider.all().sendMessage { Chat.component("&8[&a${e.player.gameParticipant?.bounties}&8]&c${e.player.gameParticipant?.position}&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
         }
     }
 

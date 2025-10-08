@@ -7,6 +7,7 @@ import com.glacier.survivalgames.application.service.ParticipantService
 import com.glacier.survivalgames.domain.StateMachine
 import com.glacier.survivalgames.domain.entity.GameContext
 import com.glacier.survivalgames.domain.entity.GameState
+import com.glacier.survivalgames.domain.entity.getMCSpectators
 import com.glacier.survivalgames.domain.model.GameMap
 import com.glacier.survivalgames.extension.gameParticipant
 import com.glacier.survivalgames.extension.spectator
@@ -21,7 +22,9 @@ import io.papermc.lib.PaperLib
 import org.bukkit.Bukkit
 import org.bukkit.Chunk
 import org.bukkit.Material
+import org.bukkit.World
 import org.bukkit.entity.Player
+import org.bukkit.event.player.AsyncPlayerChatEvent
 import org.bukkit.event.player.PlayerMoveEvent
 import org.imanity.imanityspigot.chunk.AsyncPriority
 import java.util.LinkedList
@@ -56,35 +59,19 @@ class StatePreGame(stateMachine: StateMachine<GameState>,
                     Log.info("Chunk search radius: $radius")
 
                     val taskTopLeft = MCSchedulers.getAsyncScheduler().schedule {
-                        for (x in center.x - radius until center.x) {
-                            for (z in center.z - radius until center.z) {
-                                futures.add(world.imanity().getChunkAtAsynchronously(x, z, AsyncPriority.NORMAL))
-                            }
-                        }
+                        getChunksAsync(center.x - radius, center.x, center.z - radius, center.z, futures, world)
                     }
 
                     val taskTopRight = MCSchedulers.getAsyncScheduler().schedule {
-                        for (x in center.x until center.x + radius) {
-                            for (z in center.z - radius until center.z) {
-                                futures.add(world.imanity().getChunkAtAsynchronously(x, z, AsyncPriority.NORMAL))
-                            }
-                        }
+                        getChunksAsync(center.x, center.x + radius, center.z - radius, center.z, futures, world)
                     }
 
                     val taskBottomLeft = MCSchedulers.getAsyncScheduler().schedule {
-                        for (x in center.x - radius until center.x) {
-                            for (z in center.z until center.z + radius) {
-                                futures.add(world.imanity().getChunkAtAsynchronously(x, z, AsyncPriority.NORMAL))
-                            }
-                        }
+                        getChunksAsync(center.x - radius, center.x, center.z, center.z + radius, futures, world)
                     }
 
                     val taskBottomRight = MCSchedulers.getAsyncScheduler().schedule {
-                        for (x in center.x until center.x + radius) {
-                            for (z in center.z until center.z + radius) {
-                                futures.add(world.imanity().getChunkAtAsynchronously(x, z, AsyncPriority.NORMAL))
-                            }
-                        }
+                        getChunksAsync(center.x, center.x + radius, center.z, center.z + center.z + radius, futures, world)
                     }
 
                     CompletableFuture.allOf(
@@ -94,9 +81,9 @@ class StatePreGame(stateMachine: StateMachine<GameState>,
                         taskBottomRight.future)
                 }.thenCompose {
                     val chunks = futures.toList()
-                    val ft = chunks.map { scanChunkAsync(it.get()).whenComplete { _, ex ->
-                        ex?.let { ex -> Log.error(ex) }
-                    } }
+                    val ft = chunks.map { future -> scanChunkAsync(future.get())
+                        .exceptionally { it.printStackTrace(); null }
+                    }
                     CompletableFuture.allOf(*ft.toTypedArray())
                 }.thenAccept {
                     val length = chestService.tier1Chests.size
@@ -114,12 +101,10 @@ class StatePreGame(stateMachine: StateMachine<GameState>,
                             TaskResponse.continueTask()
                         }
                     }, 0L, 2L)
+
                     Log.info("Tier1 chests: ${chestService.tier1Chests.size}")
                     Log.info("Tier2 chests: ${chestService.tier2Chests.size}")
-                }.whenComplete { _, ex ->
-                    ex?.printStackTrace()
-                    ex.cause?.printStackTrace()
-                }
+                }.exceptionally { it.printStackTrace(); null }
         }
 
         return super.enterAsync().thenApply {
@@ -171,6 +156,19 @@ class StatePreGame(stateMachine: StateMachine<GameState>,
                 player.spectator()
                 context.spectators.add(player.uniqueId)
             }
+        }
+    }
+
+    override fun onChat(e: AsyncPlayerChatEvent) {
+        // 発言者が観戦者の場合は観戦者とコンソールのみ送信する
+        if (context.spectators.contains(e.player.uniqueId)) {
+            val points = POINT_FORMATTER.get().format(e.player.gameParticipant?.points)
+            context.getMCSpectators().forEach { it.sendMessage { Chat.component("&8[&e$points&8]&4SPEC&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) } }
+            audienceProvider.console().sendMessage { Chat.component("&8[&e$points&8]&4SPEC&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
+        }
+        // 発言者が生存者の場合は全てのユーザー、コンソールに送信する
+        else {
+            audienceProvider.all().sendMessage { Chat.component("&8[&a${e.player.gameParticipant?.bounties}&8]&c${e.player.gameParticipant?.position}&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
         }
     }
 
@@ -243,5 +241,13 @@ class StatePreGame(stateMachine: StateMachine<GameState>,
                 }
             }
         }, scanExecutor)
+    }
+
+    private fun getChunksAsync(startX: Int, endX: Int, startZ: Int, endZ: Int, futures: ConcurrentLinkedQueue<CompletableFuture<Chunk>>, world: World) {
+        for (x in startX until endX) {
+            for (z in startZ until endZ) {
+                futures.add(world.imanity().getChunkAtAsynchronously(x, z, AsyncPriority.NORMAL))
+            }
+        }
     }
 }

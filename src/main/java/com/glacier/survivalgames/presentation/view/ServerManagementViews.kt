@@ -46,8 +46,14 @@ class ServerManagementMapSelectionView(mapService: GameMapService) : View() {
 
     private val maps = mapService.maps.toMutableList()
     
-    val paginationState: State<Pagination> = paginationState(maps) { ctx, builder, index, map ->
-        ItemStack(Material.PAPER)
+    val paginationState: State<Pagination> = paginationState(maps) { context, builder, index, map ->
+        builder.withItem(ItemStack(Material.MAP).apply {
+            itemMeta = itemMeta?.apply {
+                displayName = TextColor.text("&b${map.name}")
+                lore = listOf(TextColor.text("&6${map.author}"))
+            }
+        })
+        builder.onClick { ctx -> ctx.player.sendMessage("Hello World") }
     }
     override fun onInit(config: ViewConfigBuilder) {
         config.title("Map Selection")
@@ -63,11 +69,11 @@ class ServerManagementMapSelectionView(mapService: GameMapService) : View() {
     override fun onFirstRender(render: RenderContext) {
         val pagination = paginationState.get(render)
 
-        render.firstSlot(ItemStack(Material.CLAY_BRICK))
+        render.slot(0, ItemStack(Material.CLAY_BRICK))
             .updateOnStateChange(paginationState)
             .onClick(pagination::back)
 
-        render.lastSlot(ItemStack(Material.CLAY_BRICK))
+        render.slot(8, ItemStack(Material.CLAY_BRICK))
             .updateOnStateChange(paginationState)
             .onClick(pagination::advance)
     }
