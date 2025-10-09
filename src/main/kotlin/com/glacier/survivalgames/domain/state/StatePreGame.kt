@@ -201,9 +201,7 @@ class StatePreGame(stateMachine: StateMachine<GameState>,
 
         return CompletableFuture.runAsync({
             positions.parallelStream().forEach { (x, y, z) ->
-                val id = snapshot.getBlockTypeId(x, y, z)
-                val material = Material.getMaterial(id)
-                when (material) {
+                when (chunk.getBlock(x, y, z).type) {
                     Material.CHEST -> {
                         chestService.tier1Chests[Triple(chunkX * ChunkUtils.SIZE + x, y, chunkZ * ChunkUtils.SIZE + z)] = true
                     }
