@@ -41,6 +41,10 @@ import java.text.NumberFormat
 import java.util.Locale
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.ThreadFactory
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import kotlin.let
 import kotlin.math.min
 
@@ -61,7 +65,18 @@ abstract class StateBase(stateMachine: StateMachine<GameState>,
         protected val CPU_POOL = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors())
 
         @JvmStatic
-        protected val IO_POOL = Executors.newFixedThreadPool(2)
+        protected val IO_POOL = ThreadPoolExecutor(
+            0,                     // corePoolSize (0 で idle 時はスレッドが無い)
+            4,                     // maximumPoolSize (上限 4 スレッド)
+            60L, TimeUnit.SECONDS, // idle スレッドの存続時間
+            SynchronousQueue<Runnable>(), // 新規タスクは即座に新スレッドへ
+            ThreadFactory { r ->
+                val t = Thread(r)
+                t.isDaemon = true
+                t.name = "io-pool-${t.id}"
+                t
+            }
+        )
 
         private val CHANCE_FORMAT = DecimalFormat("0.##")
     }
