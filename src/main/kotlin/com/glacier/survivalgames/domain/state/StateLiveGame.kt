@@ -16,7 +16,6 @@ import com.glacier.survivalgames.utils.Chat
 import com.glacier.survivalgames.utils.LocationUtils
 import io.fairyproject.bukkit.events.player.PlayerDamageByPlayerEvent
 import io.fairyproject.bukkit.events.player.PlayerDamageEvent
-import io.fairyproject.log.Log
 import io.fairyproject.mc.scheduler.MCSchedulers
 import io.fairyproject.scheduler.response.TaskResponse
 import io.papermc.lib.PaperLib
@@ -30,7 +29,6 @@ import org.bukkit.event.player.PlayerMoveEvent
 import org.bukkit.event.player.PlayerPickupItemEvent
 import org.bukkit.event.vehicle.VehicleEnterEvent
 import java.util.concurrent.CompletableFuture
-import kotlin.math.min
 
 class StateLiveGame(stateMachine: StateMachine<GameState>,
                     context: GameContext,

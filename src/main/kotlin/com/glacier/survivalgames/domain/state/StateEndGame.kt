@@ -6,7 +6,6 @@ import com.glacier.survivalgames.application.service.ParticipantService
 import com.glacier.survivalgames.domain.StateMachine
 import com.glacier.survivalgames.domain.entity.GameContext
 import com.glacier.survivalgames.domain.entity.GameState
-import com.glacier.survivalgames.domain.entity.getMCSpectators
 import com.glacier.survivalgames.extension.gameParticipant
 import com.glacier.survivalgames.extension.spectator
 import com.glacier.survivalgames.utils.Chat
