@@ -124,6 +124,8 @@ class StateFFADeathmatch(stateMachine: StateMachine<GameState>,
         }
     }
 
+    override fun onMove(e: PlayerMoveEvent) {}
+
     override fun onChat(e: AsyncPlayerChatEvent) {
         // 発言者が観戦者の場合は観戦者とコンソールのみ送信する
         if (context.spectators.contains(e.player.uniqueId)) {

@@ -1,8 +1,14 @@
 package com.glacier.survivalgames.domain.entity
 
+import com.glacier.survivalgames.domain.message.SelectedGameMapMessage
+import com.glacier.survivalgames.utils.RxBus
 import io.fairyproject.container.InjectableComponent
+import io.fairyproject.container.PreDestroy
+import io.fairyproject.container.PreInitialize
 import io.fairyproject.mc.MCPlayer
 import io.fairyproject.scheduler.ScheduledTask
+import io.reactivex.rxjava3.disposables.CompositeDisposable
+import io.reactivex.rxjava3.kotlin.addTo
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
 import java.util.Collections
@@ -16,6 +22,7 @@ class GameContext {
     }
 
     val settings by lazy { GameSettings() }
+
     var state = GameState.Lobby
     var deathmatchStyle = DeathmatchStyle.FFA
 
@@ -28,9 +35,19 @@ class GameContext {
     val lastAttacked = ConcurrentHashMap<UUID, UUID>(32)
     val lastAttackedTask = ConcurrentHashMap<UUID, ScheduledTask<*>>(32)
 
-
     internal val bukkitCache = ConcurrentHashMap<UUID, Player>(48)
     internal val mcCache = ConcurrentHashMap<UUID, MCPlayer>(48)
+
+
+    private val disposable = CompositeDisposable()
+
+    @PreInitialize
+    fun onPreInitialize() {
+        RxBus.listen<SelectedGameMapMessage>().subscribe { settings.gameMap = it.map }.addTo(disposable)
+    }
+
+    @PreDestroy
+    fun onPreDestroy() { disposable.clear() }
 }
 
 fun GameContext.removeCacheIf(predicate: (UUID) -> Boolean) {

@@ -54,9 +54,8 @@ class StateEndGame(stateMachine: StateMachine<GameState>,
                 .mapNotNull { LocationUtils.getLocationFromString(it) }
                 .forEach { world.spawnEntity(it, EntityType.FIREWORK) }
 
-            context.players.firstOrNull().let {
+            context.players.firstOrNull()?.let {
                 val player = Bukkit.getPlayer(it)
-
                 player.gameParticipant?.let { gameParticipant ->
                     gameParticipant.wins++
                     if (gameParticipant.bounties > 0) {

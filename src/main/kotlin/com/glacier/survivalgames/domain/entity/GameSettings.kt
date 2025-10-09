@@ -1,10 +1,13 @@
 package com.glacier.survivalgames.domain.entity
 
+import com.glacier.survivalgames.domain.model.GameMap
 import io.fairyproject.bootstrap.bukkit.BukkitPlugin
+
 
 class GameSettings {
     var requiredPlayers = BukkitPlugin.INSTANCE.config.getInt("settings.required-players", 2)
     var privacy = PrivacyType.PUBLIC
+    var gameMap: GameMap? = null
 
     var gameLength = GameLengthType.THIRTY_MINUTES
     var daylightCycle = true

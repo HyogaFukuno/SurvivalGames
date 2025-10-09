@@ -1,7 +1,7 @@
 package com.glacier.survivalgames.presentation.view
 
+import com.glacier.survivalgames.AudienceProvider
 import com.glacier.survivalgames.application.service.GameMapService
-import com.glacier.survivalgames.domain.message.OpenMapSelectionMessage
 import com.glacier.survivalgames.domain.message.OpenServerManagementMessage
 import com.glacier.survivalgames.utils.RxBus
 import io.fairyproject.bootstrap.bukkit.BukkitPlugin
@@ -13,18 +13,19 @@ import io.reactivex.rxjava3.kotlin.addTo
 import me.devnatan.inventoryframework.ViewFrame
 
 @InjectableComponent
-class ViewAdapter(mapService: GameMapService) {
+class ViewAdapter(mapService: GameMapService, audienceProvider: AudienceProvider) {
 
     private val frame by lazy { ViewFrame.create(BukkitPlugin.INSTANCE)
-        .with(ServerManagementMainView())
-        .with(ServerManagementMapSelectionView(mapService))
+        .with(ServerManagement.MainView())
+        .with(ServerManagement.MapSelectionView(mapService, audienceProvider))
+        .with(ServerManagement.PrivacyView())
+        .with(ServerManagement.MutatorsView())
     }
     private val disposable = CompositeDisposable()
 
     @PreInitialize
     fun onPreInitialize() {
-        RxBus.listen<OpenServerManagementMessage>().subscribe { frame.open(ServerManagementMainView::class.java, it.player) }.addTo(disposable)
-        RxBus.listen<OpenMapSelectionMessage>().subscribe { frame.open(ServerManagementMapSelectionView::class.java, it.player) }.addTo(disposable)
+        RxBus.listen<OpenServerManagementMessage>().subscribe { frame.open(ServerManagement.MainView::class.java, it.player) }.addTo(disposable)
 
         frame.register()
     }

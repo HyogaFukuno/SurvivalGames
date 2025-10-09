@@ -1,5 +1,6 @@
 package com.glacier.survivalgames.application.service
 
+import com.glacier.survivalgames.domain.entity.GameContext
 import com.glacier.survivalgames.domain.model.GameMap
 import io.fairyproject.bootstrap.bukkit.BukkitPlugin
 import io.fairyproject.container.InjectableComponent
@@ -8,7 +9,7 @@ import org.bukkit.configuration.serialization.ConfigurationSerialization
 import java.io.File
 
 @InjectableComponent
-class GameMapService {
+class GameMapService(val context: GameContext) {
     val maps by lazy { loadMaps() }
     val decideMap by lazy { decideMap() }
     val votableMaps by lazy { maps.shuffled().take(5) }
@@ -37,6 +38,8 @@ class GameMapService {
     }
 
     private fun decideMap(): GameMap {
+        context.settings.gameMap?.let { return it }
+
         val totalVotes = currentVotes.values.sum()
         if (totalVotes == 0) {
             return votableMaps.random()
