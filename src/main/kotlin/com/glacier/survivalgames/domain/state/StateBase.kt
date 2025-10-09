@@ -120,9 +120,10 @@ abstract class StateBase(stateMachine: StateMachine<GameState>,
     private fun onJoin(e: PlayerJoinEvent) {
         Log.info("called ${key}.onJoin")
         CompletableFuture.runAsync({
-            e.player.reset()
-            GameContext.gameParticipants.add(participantService.create(e.player))
 
+            GameContext.gameParticipants.add(participantService.create(e.player))
+        }, IO_POOL).thenAcceptAsync({
+            e.player.reset()
             val points = POINT_FORMATTER.get().format(e.player.gameParticipant?.points)
             audienceProvider.all().sendMessage { Chat.component("&8[&e${points}&8]&r${e.player.displayName} &6has joined&8.", prefix = false) }
             onJoin(e.player)
@@ -134,7 +135,7 @@ abstract class StateBase(stateMachine: StateMachine<GameState>,
             context.players.removeIf { e.player.uniqueId == it }
             context.spectators.removeIf { e.player.uniqueId == it }
             context.removeCacheIf { e.player.uniqueId == it }
-
+        }, IO_POOL).thenAcceptAsync({
             val points = POINT_FORMATTER.get().format(e.player.gameParticipant?.points)
             audienceProvider.all().sendMessage { Chat.component("&8[&e${points}&8]&r${e.player.displayName} &6has left&8.", prefix = false) }
 
