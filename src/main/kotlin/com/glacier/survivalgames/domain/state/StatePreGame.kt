@@ -8,7 +8,6 @@ import com.glacier.survivalgames.domain.StateMachine
 import com.glacier.survivalgames.domain.entity.GameContext
 import com.glacier.survivalgames.domain.entity.GameState
 import com.glacier.survivalgames.domain.entity.getMCSpectators
-import com.glacier.survivalgames.domain.model.GameMap
 import com.glacier.survivalgames.extension.gameParticipant
 import com.glacier.survivalgames.extension.spectator
 import com.glacier.survivalgames.utils.Chat
@@ -17,6 +16,7 @@ import com.glacier.survivalgames.utils.LocationUtils
 import io.fairyproject.bootstrap.bukkit.BukkitPlugin
 import io.fairyproject.log.Log
 import io.fairyproject.mc.scheduler.MCSchedulers
+import io.fairyproject.scheduler.repeat.RepeatPredicate
 import io.fairyproject.scheduler.response.TaskResponse
 import io.papermc.lib.PaperLib
 import org.bukkit.Bukkit
@@ -27,11 +27,8 @@ import org.bukkit.entity.Player
 import org.bukkit.event.player.AsyncPlayerChatEvent
 import org.bukkit.event.player.PlayerMoveEvent
 import org.imanity.imanityspigot.chunk.AsyncPriority
-import java.util.LinkedList
-import java.util.Queue
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentLinkedQueue
-import java.util.concurrent.Executors
 
 class StatePreGame(stateMachine: StateMachine<GameState>,
                    context: GameContext,
@@ -42,77 +39,67 @@ class StatePreGame(stateMachine: StateMachine<GameState>,
 ) : StateBase(stateMachine, GameState.PreGame, context, audienceProvider, participantService, mapService) {
 
     private val defaultTime by lazy { BukkitPlugin.INSTANCE.config.getInt("remain-time.pre-game", 10) }
-    private val maps: Queue<GameMap> by lazy { LinkedList(mapService.maps.filter { it.worldName != mapService.decideMap.worldName }) }
-    private val scanExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors())
 
     init {
         remainTime = defaultTime
     }
 
-    override fun enterAsync(): CompletableFuture<Any> {
+    override fun enterAsync(): CompletableFuture<Void> {
         MCSchedulers.getAsyncScheduler().schedule {
             val futures = ConcurrentLinkedQueue<CompletableFuture<Chunk>>()
             val world = Bukkit.getWorld(mapService.decideMap.worldName)
             world.imanity().getChunkAtAsynchronously(world.spawnLocation, AsyncPriority.HIGH)
-                .thenCompose { center ->
+                .thenComposeAsync({ center ->
                     val radius = mapService.decideMap.radius / ChunkUtils.SIZE
                     Log.info("Chunk search radius: $radius")
 
-                    val taskTopLeft = MCSchedulers.getAsyncScheduler().schedule {
+                    val topLeft = MCSchedulers.getAsyncScheduler().schedule {
                         getChunksAsync(center.x - radius, center.x, center.z - radius, center.z, futures, world)
                     }
 
-                    val taskTopRight = MCSchedulers.getAsyncScheduler().schedule {
+                    val topRight = MCSchedulers.getAsyncScheduler().schedule {
                         getChunksAsync(center.x, center.x + radius, center.z - radius, center.z, futures, world)
                     }
 
-                    val taskBottomLeft = MCSchedulers.getAsyncScheduler().schedule {
+                    val bottomLeft = MCSchedulers.getAsyncScheduler().schedule {
                         getChunksAsync(center.x - radius, center.x, center.z, center.z + radius, futures, world)
                     }
 
-                    val taskBottomRight = MCSchedulers.getAsyncScheduler().schedule {
+                    val bottomRight = MCSchedulers.getAsyncScheduler().schedule {
                         getChunksAsync(center.x, center.x + radius, center.z, center.z + center.z + radius, futures, world)
                     }
 
-                    CompletableFuture.allOf(
-                        taskTopLeft.future,
-                        taskTopRight.future,
-                        taskBottomLeft.future,
-                        taskBottomRight.future)
-                }.thenCompose {
+                    CompletableFuture.allOf(topLeft.future, topRight.future, bottomLeft.future, bottomRight.future)
+                }, CPU_POOL)
+                .thenComposeAsync({
                     val chunks = futures.toList()
                     val ft = chunks.map { future -> scanChunkAsync(future.get())
                         .exceptionally { it.printStackTrace(); null }
                     }
                     CompletableFuture.allOf(*ft.toTypedArray())
-                }.thenAccept {
+                }, CPU_POOL)
+                .thenAcceptAsync({
                     val length = chestService.tier1Chests.size
                     var index = 0
 
                     val world = Bukkit.getWorld(mapService.decideMap.worldName)
                     MCSchedulers.getGlobalScheduler().scheduleAtFixedRate({
-                        if (index >= length) {
-                            TaskResponse.success(true)
-                        }
-                        else {
-                            val (x, y, z) = chestService.tier1Chests.keys.elementAt(index)
-                            chestService.fillTier1Chest(chestService.getChest(x, y , z, world))
-                            index++
-                            TaskResponse.continueTask()
-                        }
-                    }, 0L, 2L)
+                        val (x, y, z) = chestService.tier1Chests.keys.elementAt(index++)
+                        chestService.fillTier1Chest(chestService.getChest(x, y , z, world))
+                    }, 0L, 2L, RepeatPredicate.cycled<Boolean>(length))
 
                     Log.info("Tier1 chests: ${chestService.tier1Chests.size}")
                     Log.info("Tier2 chests: ${chestService.tier2Chests.size}")
-                }.exceptionally { it.printStackTrace(); null }
+                }, CPU_POOL)
+                .exceptionally { it.printStackTrace(); null }
         }
 
-        return super.enterAsync().thenApply {
+        return super.enterAsync().thenAccept {
             audienceProvider.all().sendMessage { Chat.component("&eMap name&8: &2${mapService.decideMap.name}") }
             audienceProvider.all().sendMessage { Chat.component("&eMap author&8: &2${mapService.decideMap.author}") }
             audienceProvider.all().sendMessage { Chat.component("&eMap link&8: &2${mapService.decideMap.url}") }
 
-            Bukkit.unloadWorld("lobby", false)
+            MCSchedulers.getGlobalScheduler().schedule { Bukkit.unloadWorld("lobby", false) }
         }
     }
 
@@ -152,24 +139,26 @@ class StatePreGame(stateMachine: StateMachine<GameState>,
     override fun onJoin(player: Player) {
         val world = Bukkit.getWorld(mapService.decideMap.worldName)
         MCSchedulers.getGlobalScheduler().schedule {
-            PaperLib.teleportAsync(player, world.spawnLocation).thenAccept {
+            PaperLib.teleportAsync(player, world.spawnLocation).thenAcceptAsync({
                 player.spectator()
                 context.spectators.add(player.uniqueId)
-            }
+            }, CPU_POOL)
         }
     }
 
     override fun onChat(e: AsyncPlayerChatEvent) {
-        // 発言者が観戦者の場合は観戦者とコンソールのみ送信する
-        if (context.spectators.contains(e.player.uniqueId)) {
-            val points = POINT_FORMATTER.get().format(e.player.gameParticipant?.points)
-            context.getMCSpectators().forEach { it.sendMessage { Chat.component("&8[&e$points&8]&4SPEC&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) } }
-            audienceProvider.console().sendMessage { Chat.component("&8[&e$points&8]&4SPEC&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
-        }
-        // 発言者が生存者の場合は全てのユーザー、コンソールに送信する
-        else {
-            audienceProvider.all().sendMessage { Chat.component("&8[&a${e.player.gameParticipant?.bounties}&8]&c${e.player.gameParticipant?.position}&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
-        }
+        CompletableFuture.runAsync({
+            // 発言者が観戦者の場合は観戦者とコンソールのみ送信する
+            if (context.spectators.contains(e.player.uniqueId)) {
+                val points = POINT_FORMATTER.get().format(e.player.gameParticipant?.points)
+                context.getMCSpectators().forEach { it.sendMessage { Chat.component("&8[&e$points&8]&4SPEC&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) } }
+                audienceProvider.console().sendMessage { Chat.component("&8[&e$points&8]&4SPEC&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
+            }
+            // 発言者が生存者の場合は全てのユーザー、コンソールに送信する
+            else {
+                audienceProvider.all().sendMessage { Chat.component("&8[&a${e.player.gameParticipant?.bounties}&8]&c${e.player.gameParticipant?.position}&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
+            }
+        }, CPU_POOL)
     }
 
     override fun onMove(e: PlayerMoveEvent) {
@@ -188,22 +177,6 @@ class StatePreGame(stateMachine: StateMachine<GameState>,
                 PaperLib.teleportAsync(e.player, it)
             }
         }
-    }
-
-    private fun unloadWorld(map: GameMap): CompletableFuture<*> {
-        return MCSchedulers.getGlobalScheduler().schedule({
-
-            Log.info("Unloading world ${map.worldName}...")
-            Bukkit.unloadWorld(map.worldName, false)
-
-            if (maps.isNotEmpty()) {
-                unloadWorld(maps.poll())
-            }
-            else {
-                Log.info("All worlds unloaded.")
-                CompletableFuture.completedFuture(null)
-            }
-        }, 20L).future
     }
 
     @Suppress("DEPRECATION")
@@ -240,7 +213,7 @@ class StatePreGame(stateMachine: StateMachine<GameState>,
                     else -> {}
                 }
             }
-        }, scanExecutor)
+        }, CPU_POOL)
     }
 
     private fun getChunksAsync(startX: Int, endX: Int, startZ: Int, endZ: Int, futures: ConcurrentLinkedQueue<CompletableFuture<Chunk>>, world: World) {

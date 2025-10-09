@@ -104,8 +104,8 @@ class StateMachine<TKey> {
         internal var forgetEnter = false
         internal var forgetExit = false
 
-        private val enterAsync: CompletableFuture<Any> by lazy { enterAsync() }
-        private val exitAsync: CompletableFuture<Any> by lazy { exitAsync() }
+        private val enterAsync: CompletableFuture<Void> by lazy { enterAsync() }
+        private val exitAsync: CompletableFuture<Void> by lazy { exitAsync() }
 
         internal fun enter(): TaskResponse<Boolean> {
             val future = enterAsync
@@ -123,9 +123,9 @@ class StateMachine<TKey> {
             }
         }
 
-        protected abstract fun enterAsync(): CompletableFuture<Any>
+        protected abstract fun enterAsync(): CompletableFuture<Void>
         internal abstract fun update(): TaskResponse<Boolean>
-        internal abstract fun exitAsync(): CompletableFuture<Any>
+        internal abstract fun exitAsync(): CompletableFuture<Void>
         protected abstract fun broadcast()
         protected abstract fun shouldBroadcast(): Boolean
     }

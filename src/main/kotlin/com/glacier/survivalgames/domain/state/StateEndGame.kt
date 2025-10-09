@@ -40,13 +40,13 @@ class StateEndGame(stateMachine: StateMachine<GameState>,
         remainTime = defaultTime
     }
 
-    override fun enterAsync(): CompletableFuture<Any> {
-        return super.enterAsync().thenApply {
+    override fun enterAsync(): CompletableFuture<Void> {
+        return super.enterAsync().thenAcceptAsync({
             audienceProvider.all().sendMessage { Chat.component("&aThe games have ended!") }
 
             // 試合が終了したのでワールドを夜にする
             val world = Bukkit.getWorld(mapService.decideMap.worldName)
-            world.time = 400000L
+            MCSchedulers.getGlobalScheduler().schedule { world.time = 400000L }
 
             // 全てのスポーン位置に対して花火を出す
             sequenceOf(mapService.decideMap.spawns, mapService.decideMap.deathmatchSpawns)
@@ -66,7 +66,7 @@ class StateEndGame(stateMachine: StateMachine<GameState>,
 
                 audienceProvider.all().sendMessage { Chat.component("${player.displayName}&a has won the Survival Games!") }
             }
-        }
+        }, CPU_POOL)
     }
 
     override fun update(): TaskResponse<Boolean> {
@@ -89,20 +89,22 @@ class StateEndGame(stateMachine: StateMachine<GameState>,
     override fun onJoin(player: Player) {
         val world = Bukkit.getWorld(mapService.decideMap.worldName)
         MCSchedulers.getGlobalScheduler().schedule {
-            PaperLib.teleportAsync(player, world.spawnLocation).thenAccept {
+            PaperLib.teleportAsync(player, world.spawnLocation).thenAcceptAsync({
                 player.spectator()
                 context.spectators.add(player.uniqueId)
-            }
+            }, CPU_POOL)
         }
     }
 
     override fun onChat(e: AsyncPlayerChatEvent) {
-        if (context.spectators.contains(e.player.uniqueId)) {
-            val points = POINT_FORMATTER.get().format(e.player.gameParticipant?.points)
-            audienceProvider.all().sendMessage { Chat.component("&8[&e$points&8]&4SPEC&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
-        } else {
-            audienceProvider.all().sendMessage { Chat.component("&8[&a${e.player.gameParticipant?.bounties}&8]&c${e.player.gameParticipant?.position}&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
-        }
+        CompletableFuture.runAsync({
+            if (context.spectators.contains(e.player.uniqueId)) {
+                val points = POINT_FORMATTER.get().format(e.player.gameParticipant?.points)
+                audienceProvider.all().sendMessage { Chat.component("&8[&e$points&8]&4SPEC&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
+            } else {
+                audienceProvider.all().sendMessage { Chat.component("&8[&a${e.player.gameParticipant?.bounties}&8]&c${e.player.gameParticipant?.position}&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
+            }
+        }, CPU_POOL)
     }
 
     override fun onMove(e: PlayerMoveEvent) {}
@@ -133,9 +135,9 @@ class StateEndGame(stateMachine: StateMachine<GameState>,
                 || e.action == Action.RIGHT_CLICK_BLOCK
                 || e.action == Action.LEFT_CLICK_BLOCK) {
                 val random = Bukkit.getPlayer(context.players.random())
-                PaperLib.teleportAsync(e.player, random.location).thenAccept {
+                PaperLib.teleportAsync(e.player, random.location).thenAcceptAsync({
                     audienceProvider.player(e.player).sendMessage { Chat.component("Teleporting ${random.displayName}&r.") }
-                }
+                }, CPU_POOL)
             }
         }
     }

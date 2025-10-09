@@ -39,10 +39,10 @@ class StatePreFFADeathmatch(stateMachine: StateMachine<GameState>,
         remainTime = defaultTime
     }
 
-    override fun enterAsync(): CompletableFuture<Any> {
-        return super.enterAsync().thenApply {
+    override fun enterAsync(): CompletableFuture<Void> {
+        return super.enterAsync().thenAcceptAsync({
             audienceProvider.all().sendMessage { Chat.component("&4Please allow &8[&e$remainTime&8]&4 seconds for all players to load the map.") }
-        }
+        }, CPU_POOL)
     }
 
     override fun update(): TaskResponse<Boolean> {
@@ -73,24 +73,26 @@ class StatePreFFADeathmatch(stateMachine: StateMachine<GameState>,
     override fun onJoin(player: Player) {
         val world = Bukkit.getWorld(mapService.decideMap.worldName)
         MCSchedulers.getGlobalScheduler().schedule {
-            PaperLib.teleportAsync(player, world.spawnLocation).thenAccept {
+            PaperLib.teleportAsync(player, world.spawnLocation).thenAcceptAsync({
                 player.spectator()
                 context.spectators.add(player.uniqueId)
-            }
+            }, CPU_POOL)
         }
     }
 
     override fun onChat(e: AsyncPlayerChatEvent) {
-        // 発言者が観戦者の場合は観戦者とコンソールのみ送信する
-        if (context.spectators.contains(e.player.uniqueId)) {
-            val points = POINT_FORMATTER.get().format(e.player.gameParticipant?.points)
-            context.getMCSpectators().forEach { it.sendMessage { Chat.component("&8[&e$points&8]&4SPEC&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) } }
-            audienceProvider.console().sendMessage { Chat.component("&8[&e$points&8]&4SPEC&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
-        }
-        // 発言者が生存者の場合は全てのユーザー、コンソールに送信する
-        else {
-            audienceProvider.all().sendMessage { Chat.component("&8[&a${e.player.gameParticipant?.bounties}&8]&c${e.player.gameParticipant?.position}&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
-        }
+        CompletableFuture.runAsync({
+            // 発言者が観戦者の場合は観戦者とコンソールのみ送信する
+            if (context.spectators.contains(e.player.uniqueId)) {
+                val points = POINT_FORMATTER.get().format(e.player.gameParticipant?.points)
+                context.getMCSpectators().forEach { it.sendMessage { Chat.component("&8[&e$points&8]&4SPEC&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) } }
+                audienceProvider.console().sendMessage { Chat.component("&8[&e$points&8]&4SPEC&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
+            }
+            // 発言者が生存者の場合は全てのユーザー、コンソールに送信する
+            else {
+                audienceProvider.all().sendMessage { Chat.component("&8[&a${e.player.gameParticipant?.bounties}&8]&c${e.player.gameParticipant?.position}&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
+            }
+        }, CPU_POOL)
     }
 
     override fun onMove(e: PlayerMoveEvent) {
@@ -137,9 +139,9 @@ class StatePreFFADeathmatch(stateMachine: StateMachine<GameState>,
                 || e.action == Action.RIGHT_CLICK_BLOCK
                 || e.action == Action.LEFT_CLICK_BLOCK) {
                 val random = Bukkit.getPlayer(context.players.random())
-                PaperLib.teleportAsync(e.player, random.location).thenAccept {
+                PaperLib.teleportAsync(e.player, random.location).thenAcceptAsync({
                     audienceProvider.player(e.player).sendMessage { Chat.component("Teleporting ${random.displayName}&r.") }
-                }
+                }, CPU_POOL)
             }
         }
     }

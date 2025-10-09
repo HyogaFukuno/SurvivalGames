@@ -69,14 +69,14 @@ class StateLobby(stateMachine: StateMachine<GameState>,
         return TaskResponse.continueTask()
     }
 
-    override fun exitAsync(): CompletableFuture<Any> {
+    override fun exitAsync(): CompletableFuture<Void> {
         val task: ScheduledTask<World> = MCSchedulers.getGlobalScheduler().schedule(Callable {
             createWorld(mapService.decideMap.worldName)
         })
 
         return task.future.thenCompose {
             super.exitAsync()
-        }.thenCompose {
+        }.thenComposeAsync( {
             val futures = mapService.decideMap.spawns
                 .mapNotNull { LocationUtils.getLocationFromString(it) }
                 .mapIndexed { index, location -> Pair(index, location) }
@@ -89,7 +89,7 @@ class StateLobby(stateMachine: StateMachine<GameState>,
                     }
                 }
             CompletableFuture.allOf(*futures.toTypedArray())
-        }.thenApply {}
+        }, CPU_POOL)
     }
 
     override fun broadcast() {

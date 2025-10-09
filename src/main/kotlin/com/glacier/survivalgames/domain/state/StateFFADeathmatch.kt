@@ -7,9 +7,7 @@ import com.glacier.survivalgames.domain.StateMachine
 import com.glacier.survivalgames.domain.entity.GameContext
 import com.glacier.survivalgames.domain.entity.GameState
 import com.glacier.survivalgames.domain.entity.getBukkitPlayers
-import com.glacier.survivalgames.domain.entity.getMCPlayers
 import com.glacier.survivalgames.domain.entity.getMCSpectators
-import com.glacier.survivalgames.domain.model.spawnLocation
 import com.glacier.survivalgames.extension.gameParticipant
 import com.glacier.survivalgames.extension.spectator
 import com.glacier.survivalgames.utils.Chat
@@ -17,7 +15,6 @@ import com.glacier.survivalgames.utils.LocationUtils
 import io.fairyproject.bootstrap.bukkit.BukkitPlugin
 import io.fairyproject.bukkit.events.player.PlayerDamageByPlayerEvent
 import io.fairyproject.bukkit.events.player.PlayerDamageEvent
-import io.fairyproject.log.Log
 import io.fairyproject.mc.scheduler.MCSchedulers
 import io.fairyproject.scheduler.ScheduledTask
 import io.fairyproject.scheduler.response.TaskResponse
@@ -29,12 +26,10 @@ import org.bukkit.event.block.Action
 import org.bukkit.event.entity.FoodLevelChangeEvent
 import org.bukkit.event.player.AsyncPlayerChatEvent
 import org.bukkit.event.player.PlayerInteractEvent
-import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerMoveEvent
 import org.bukkit.event.player.PlayerPickupItemEvent
 import org.bukkit.event.vehicle.VehicleEnterEvent
 import java.util.concurrent.CompletableFuture
-import kotlin.math.min
 
 class StateFFADeathmatch(stateMachine: StateMachine<GameState>,
                          context: GameContext,
@@ -52,8 +47,8 @@ class StateFFADeathmatch(stateMachine: StateMachine<GameState>,
         remainTime = defaultTime
     }
 
-    override fun enterAsync(): CompletableFuture<Any> {
-        return super.enterAsync().thenApply {
+    override fun enterAsync(): CompletableFuture<Void> {
+        return super.enterAsync().thenAcceptAsync({
             val center = LocationUtils.getLocationFromString(mapService.decideMap.deathmatchCenter)
             taskAreaLightning = MCSchedulers.getAsyncScheduler().scheduleAtFixedRate({
                 context.getBukkitPlayers().forEach { player ->
@@ -65,7 +60,7 @@ class StateFFADeathmatch(stateMachine: StateMachine<GameState>,
             }, 20L, 20L * 3)
 
             audienceProvider.all().sendMessage { Chat.component("&cFight to the death!") }
-        }
+        }, CPU_POOL)
     }
 
     override fun update(): TaskResponse<Boolean> {
@@ -82,7 +77,7 @@ class StateFFADeathmatch(stateMachine: StateMachine<GameState>,
         return TaskResponse.continueTask()
     }
 
-    override fun exitAsync(): CompletableFuture<Any> {
+    override fun exitAsync(): CompletableFuture<Void> {
         if (context.players.size <= 1) {
             return super.exitAsync()
         }
@@ -94,7 +89,10 @@ class StateFFADeathmatch(stateMachine: StateMachine<GameState>,
                 it.world.strikeLightning(it.location)
             }
         }, 0L, 20L * 3)
-        return taskFinishLightning!!.future.thenApply { super.exitAsync() }
+
+        return taskFinishLightning!!.future.thenAcceptAsync({
+            super.exitAsync()
+        }, CPU_POOL)
     }
 
     override fun broadcast() {
@@ -117,26 +115,28 @@ class StateFFADeathmatch(stateMachine: StateMachine<GameState>,
     override fun onJoin(player: Player) {
         val world = Bukkit.getWorld(mapService.decideMap.worldName)
         MCSchedulers.getGlobalScheduler().schedule {
-            PaperLib.teleportAsync(player, world.spawnLocation).thenAccept {
+            PaperLib.teleportAsync(player, world.spawnLocation).thenAcceptAsync({
                 player.spectator()
                 context.spectators.add(player.uniqueId)
-            }
+            }, CPU_POOL)
         }
     }
 
     override fun onMove(e: PlayerMoveEvent) {}
 
     override fun onChat(e: AsyncPlayerChatEvent) {
-        // 発言者が観戦者の場合は観戦者とコンソールのみ送信する
-        if (context.spectators.contains(e.player.uniqueId)) {
-            val points = POINT_FORMATTER.get().format(e.player.gameParticipant?.points)
-            context.getMCSpectators().forEach { it.sendMessage { Chat.component("&8[&e$points&8]&4SPEC&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) } }
-            audienceProvider.console().sendMessage { Chat.component("&8[&e$points&8]&4SPEC&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
-        }
-        // 発言者が生存者の場合は全てのユーザー、コンソールに送信する
-        else {
-            audienceProvider.all().sendMessage { Chat.component("&8[&a${e.player.gameParticipant?.bounties}&8]&c${e.player.gameParticipant?.position}&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
-        }
+        CompletableFuture.runAsync({
+            // 発言者が観戦者の場合は観戦者とコンソールのみ送信する
+            if (context.spectators.contains(e.player.uniqueId)) {
+                val points = POINT_FORMATTER.get().format(e.player.gameParticipant?.points)
+                context.getMCSpectators().forEach { it.sendMessage { Chat.component("&8[&e$points&8]&4SPEC&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) } }
+                audienceProvider.console().sendMessage { Chat.component("&8[&e$points&8]&4SPEC&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
+            }
+            // 発言者が生存者の場合は全てのユーザー、コンソールに送信する
+            else {
+                audienceProvider.all().sendMessage { Chat.component("&8[&a${e.player.gameParticipant?.bounties}&8]&c${e.player.gameParticipant?.position}&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
+            }
+        }, CPU_POOL)
     }
 
     override fun onDamage(e: PlayerDamageEvent) { damage(e) }
@@ -169,9 +169,9 @@ class StateFFADeathmatch(stateMachine: StateMachine<GameState>,
                 || e.action == Action.RIGHT_CLICK_BLOCK
                 || e.action == Action.LEFT_CLICK_BLOCK) {
                 val random = Bukkit.getPlayer(context.players.random())
-                PaperLib.teleportAsync(e.player, random.location).thenAccept {
+                PaperLib.teleportAsync(e.player, random.location).thenAcceptAsync({
                     audienceProvider.player(e.player).sendMessage { Chat.component("Teleporting ${random.displayName}&r.") }
-                }
+                }, CPU_POOL)
             }
         }
     }

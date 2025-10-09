@@ -40,6 +40,7 @@ import java.text.DecimalFormat
 import java.text.NumberFormat
 import java.util.Locale
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.Executors
 import kotlin.let
 import kotlin.math.min
 
@@ -55,12 +56,19 @@ abstract class StateBase(stateMachine: StateMachine<GameState>,
         protected const val ONE_MINUTES = 60
         @JvmStatic
         protected val POINT_FORMATTER = ThreadLocal.withInitial { NumberFormat.getIntegerInstance(Locale.US) }
+
+        @JvmStatic
+        protected val CPU_POOL = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors())
+
+        @JvmStatic
+        protected val IO_POOL = Executors.newFixedThreadPool(2)
+
         private val CHANCE_FORMAT = DecimalFormat("0.##")
     }
 
     protected val disposables = CompositeDisposable()
 
-    override fun enterAsync(): CompletableFuture<Any> {
+    override fun enterAsync(): CompletableFuture<Void> {
         context.state = key
 
         Log.info("called ${key}.enterAsync")
@@ -76,12 +84,12 @@ abstract class StateBase(stateMachine: StateMachine<GameState>,
         RxBus.listen<FoodLevelChangeEvent>().subscribe(this::onFoodChange).addTo(disposables)
         RxBus.listen<PlayerInteractEvent>().subscribe(this::onInteract).addTo(disposables)
 
-        return CompletableFuture.completedFuture(true)
+        return CompletableFuture.completedFuture(null)
     }
 
-    override fun exitAsync(): CompletableFuture<Any> {
+    override fun exitAsync(): CompletableFuture<Void> {
         disposables.clear()
-        return CompletableFuture.completedFuture(true)
+        return CompletableFuture.completedFuture(null)
     }
 
     protected fun broadcastVoteMessage() {
@@ -111,18 +119,18 @@ abstract class StateBase(stateMachine: StateMachine<GameState>,
 
     private fun onJoin(e: PlayerJoinEvent) {
         Log.info("called ${key}.onJoin")
-        CompletableFuture.runAsync {
+        CompletableFuture.runAsync({
             e.player.reset()
             GameContext.gameParticipants.add(participantService.create(e.player))
 
             val points = POINT_FORMATTER.get().format(e.player.gameParticipant?.points)
             audienceProvider.all().sendMessage { Chat.component("&8[&e${points}&8]&r${e.player.displayName} &6has joined&8.", prefix = false) }
             onJoin(e.player)
-        }.whenComplete { _, ex -> ex?.printStackTrace() }
+        }, CPU_POOL).exceptionally { it.printStackTrace(); null }
     }
 
     private fun onQuit(e: PlayerQuitEvent) {
-        CompletableFuture.runAsync {
+        CompletableFuture.runAsync({
             context.players.removeIf { e.player.uniqueId == it }
             context.spectators.removeIf { e.player.uniqueId == it }
             context.removeCacheIf { e.player.uniqueId == it }
@@ -131,7 +139,7 @@ abstract class StateBase(stateMachine: StateMachine<GameState>,
             audienceProvider.all().sendMessage { Chat.component("&8[&e${points}&8]&r${e.player.displayName} &6has left&8.", prefix = false) }
 
             onQuit(e.player)
-        }.whenComplete { _, ex -> ex?.printStackTrace() }
+        }, CPU_POOL).exceptionally { it.printStackTrace(); null }
     }
 
     protected open fun onChat(e: AsyncPlayerChatEvent) {
@@ -198,7 +206,6 @@ abstract class StateBase(stateMachine: StateMachine<GameState>,
 
     protected fun onDeathByPlayer(player: Player, damager: Player? = null) {
         val location = player.location.clone()
-        location.world.strikeLightningEffect(location)
 
         context.players.removeIf { it == player.uniqueId }
         context.spectators.add(player.uniqueId)
@@ -248,6 +255,8 @@ abstract class StateBase(stateMachine: StateMachine<GameState>,
         player.foodLevel = 20
 
         MCSchedulers.getGlobalScheduler().schedule {
+            location.world.strikeLightningEffect(location)
+
             player.health = player.maxHealth
             player.foodLevel = 20
 
