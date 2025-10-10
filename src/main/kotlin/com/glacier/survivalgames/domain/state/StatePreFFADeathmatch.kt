@@ -92,7 +92,7 @@ class StatePreFFADeathmatch(stateMachine: StateMachine<GameState>,
             else {
                 audienceProvider.all().sendMessage { Chat.component("&8[&a${e.player.gameParticipant?.bounties}&8]&c${e.player.gameParticipant?.position}&8|&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
             }
-        }, CPU_POOL)
+        }, IO_POOL)
     }
 
     override fun onMove(e: PlayerMoveEvent) {

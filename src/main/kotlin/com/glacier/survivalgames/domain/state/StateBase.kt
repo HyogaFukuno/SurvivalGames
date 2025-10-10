@@ -40,6 +40,7 @@ import java.text.DecimalFormat
 import java.text.NumberFormat
 import java.util.Locale
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadFactory
@@ -59,24 +60,23 @@ abstract class StateBase(stateMachine: StateMachine<GameState>,
     companion object {
         protected const val ONE_MINUTES = 60
         @JvmStatic
-        protected val POINT_FORMATTER = ThreadLocal.withInitial { NumberFormat.getIntegerInstance(Locale.US) }
+        protected val POINT_FORMATTER: ThreadLocal<NumberFormat> = ThreadLocal.withInitial { NumberFormat.getIntegerInstance(Locale.US) }
 
         @JvmStatic
-        protected val CPU_POOL = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors())
+        protected val CPU_POOL: ExecutorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors())
 
         @JvmStatic
         protected val IO_POOL = ThreadPoolExecutor(
             0,                     // corePoolSize (0 で idle 時はスレッドが無い)
             4,                     // maximumPoolSize (上限 4 スレッド)
             60L, TimeUnit.SECONDS, // idle スレッドの存続時間
-            SynchronousQueue<Runnable>(), // 新規タスクは即座に新スレッドへ
-            ThreadFactory { r ->
-                val t = Thread(r)
-                t.isDaemon = true
-                t.name = "io-pool-${t.id}"
-                t
+            SynchronousQueue<Runnable>()) { r ->
+            // 新規タスクは即座に新スレッドへ
+            Thread(r).apply {
+                isDaemon = true
+                name = "io-pool-${threadId()}"
             }
-        )
+        }
 
         private val CHANCE_FORMAT = DecimalFormat("0.##")
     }
@@ -159,8 +159,10 @@ abstract class StateBase(stateMachine: StateMachine<GameState>,
     }
 
     protected open fun onChat(e: AsyncPlayerChatEvent) {
-        val points = POINT_FORMATTER.get().format(e.player.gameParticipant?.points)
-        audienceProvider.all().sendMessage { Chat.component("&8[&e$points&8]&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
+        CompletableFuture.runAsync({
+            val points = POINT_FORMATTER.get().format(e.player.gameParticipant?.points)
+            audienceProvider.all().sendMessage { Chat.component("&8[&e$points&8]&r${e.player.displayName}&8: &r${e.message}", prefix = false) }
+        }, IO_POOL)
     }
 
     protected open fun onDamage(e: PlayerDamageEvent) { e.isCancelled = true }

@@ -35,7 +35,7 @@ fairy {
         fairyPackage.set(properties("package") + ".fairy")
     }
 
-    bukkitProperties().bukkitApi = "1.13"
+    bukkitProperties().bukkitApi = "1.21"
 }
 
 runServer {

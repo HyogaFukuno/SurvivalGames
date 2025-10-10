@@ -74,21 +74,21 @@ class StateLobby(stateMachine: StateMachine<GameState>,
             createWorld(mapService.decideMap.worldName)
         })
 
-        return task.future.thenComposeAsync({
-            super.exitAsync().thenCompose {
-                val futures = mapService.decideMap.spawns
-                    .mapNotNull { LocationUtils.getLocationFromString(it) }
-                    .mapIndexed { index, location -> Pair(index, location) }
-                    .shuffled()
-                    .zip(context.getBukkitPlayers())
-                    .map { (pair, player) ->
-                        val (index, location) = pair
-                        PaperLib.teleportAsync(player, location).thenAccept {
-                            player.gameParticipant?.position = index
-                        }
+        return task.future.thenCompose {
+            val futures = mapService.decideMap.spawns
+                .mapNotNull { LocationUtils.getLocationFromString(it) }
+                .mapIndexed { index, location -> Pair(index, location) }
+                .shuffled()
+                .zip(context.getBukkitPlayers())
+                .map { (pair, player) ->
+                    val (index, location) = pair
+                    PaperLib.teleportAsync(player, location).thenAccept {
+                        player.gameParticipant?.position = index
                     }
-                CompletableFuture.allOf(*futures.toTypedArray())
-            }
+                }
+            CompletableFuture.allOf(*futures.toTypedArray())
+        }.thenComposeAsync({
+            super.exitAsync()
         }, CPU_POOL)
     }
 
