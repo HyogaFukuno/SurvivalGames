@@ -78,7 +78,7 @@ class StatePreGame(stateMachine: StateMachine<GameState>,
                     }
                     CompletableFuture.allOf(*ft.toTypedArray())
                 }, CPU_POOL)
-                .thenAcceptAsync({
+                .thenAccept {
                     val length = chestService.tier1Chests.size
                     var index = 0
 
@@ -90,7 +90,7 @@ class StatePreGame(stateMachine: StateMachine<GameState>,
 
                     Log.info("Tier1 chests: ${chestService.tier1Chests.size}")
                     Log.info("Tier2 chests: ${chestService.tier2Chests.size}")
-                }, CPU_POOL)
+                }
                 .exceptionally { it.printStackTrace(); null }
         }
 

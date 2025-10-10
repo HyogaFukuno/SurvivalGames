@@ -6,6 +6,7 @@ import com.glacier.survivalgames.application.service.ParticipantService
 import com.glacier.survivalgames.domain.StateMachine
 import com.glacier.survivalgames.domain.entity.GameContext
 import com.glacier.survivalgames.domain.entity.GameState
+import com.glacier.survivalgames.domain.entity.getBukkitPlayers
 import com.glacier.survivalgames.extension.gameParticipant
 import com.glacier.survivalgames.extension.spectator
 import com.glacier.survivalgames.utils.Chat
@@ -39,34 +40,33 @@ class StateEndGame(stateMachine: StateMachine<GameState>,
         remainTime = defaultTime
     }
 
-    override fun enterAsync(): CompletableFuture<Void> {
-        return super.enterAsync().thenAcceptAsync({
-            audienceProvider.all().sendMessage { Chat.component("&aThe games have ended!") }
+    override fun enterAsync(): CompletableFuture<Void> = super.enterAsync().thenAcceptAsync({
+        audienceProvider.all().sendMessage { Chat.component("&aThe games have ended!") }
 
-            // 試合が終了したのでワールドを夜にする
-            val world = Bukkit.getWorld(mapService.decideMap.worldName)
-            MCSchedulers.getGlobalScheduler().schedule { world.time = 400000L }
+        // 試合が終了したのでワールドを夜にする
+        val world = Bukkit.getWorld(mapService.decideMap.worldName)
+        MCSchedulers.getGlobalScheduler().schedule {
+            world.time = 400000L
 
             // 全てのスポーン位置に対して花火を出す
             sequenceOf(mapService.decideMap.spawns, mapService.decideMap.deathmatchSpawns)
                 .flatten()
                 .mapNotNull { LocationUtils.getLocationFromString(it) }
                 .forEach { world.spawnEntity(it, EntityType.FIREWORK) }
+        }
 
-            context.players.firstOrNull()?.let {
-                val player = Bukkit.getPlayer(it)
-                player.gameParticipant?.let { gameParticipant ->
-                    gameParticipant.wins++
-                    if (gameParticipant.bounties > 0) {
-                        player.gameParticipant?.points += gameParticipant.bounties
-                        audienceProvider.player(player).sendMessage { Chat.component("&aYou've gained &8[&e${gameParticipant.bounties}&8]&a extra points from your bounty!") }
-                    }
+        context.getBukkitPlayers().firstOrNull()?.let {
+            it.gameParticipant?.apply {
+                wins++
+                if (bounties > 0) {
+                    points += bounties
+                    audienceProvider.player(it).sendMessage { Chat.component("&aYou've gained &8[&e${bounties}&8]&a extra points from your bounty!") }
                 }
-
-                audienceProvider.all().sendMessage { Chat.component("${player.displayName}&a has won the Survival Games!") }
             }
-        }, CPU_POOL)
-    }
+
+            audienceProvider.all().sendMessage { Chat.component("${it.displayName}&a has won the Survival Games!") }
+        }
+    }, CPU_POOL)
 
     override fun update(): TaskResponse<Boolean> {
         broadcast()
